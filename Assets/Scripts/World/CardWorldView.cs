@@ -839,7 +839,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         }
         transform.localRotation = Quaternion.Euler(_owner.WorldCardTiltX, 0f, angleZ);
         int order = _owner != null ? _owner.GetWorldSortingOrderForIndex(targetIndex) : _restSortingOrder;
-        SetSortingOrder(order + 1000);
+        if (nearDiscardZone)
+            SetSortingOrder(_owner.GetWorldDragTopSortingOrder());
+        else
+            SetSortingOrder(order + 1000);
 
         _owner.NotifyWorldDrag(this);
     }

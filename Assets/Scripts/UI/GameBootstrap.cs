@@ -461,6 +461,12 @@ public class GameBootstrap : MonoBehaviour
         return b + Mathf.Max(0, index);
     }
 
+    public int GetWorldDragTopSortingOrder()
+    {
+        int b = worldHandLayout != null ? worldHandLayout.baseSortingOrder : 10;
+        return b + 9000 + Mathf.Max(0, _discard.Count);
+    }
+
     public void TogglePinnedWorldCard(CardWorldView card)
     {
         if (card == null) return;
