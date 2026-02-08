@@ -26,10 +26,10 @@ public class GameBootstrap : MonoBehaviour
     public bool showWorldDrawPile = true;
     [Header("Draw Pile Visual")]
     public bool worldDrawSingleCardVisual = true;
-    [Range(1, 6)] public int worldDrawSingleCardDepthLayers = 4;
-    public Vector3 worldDrawSingleCardDepthOffset = new Vector3(0.006f, -0.0075f, 0.001f);
-    [Range(0f, 1f)] public float worldDrawSingleCardMinDepth = 0.18f;
-    [Range(0.5f, 2.2f)] public float worldDrawSingleCardDepthCurve = 1.05f;
+    [Range(1, 8)] public int worldDrawSingleCardDepthLayers = 6;
+    public Vector3 worldDrawSingleCardDepthOffset = new Vector3(0.012f, -0.018f, 0.0014f);
+    [Range(0f, 1f)] public float worldDrawSingleCardMinDepth = 0.45f;
+    [Range(0.5f, 2.2f)] public float worldDrawSingleCardDepthCurve = 0.85f;
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
     public int worldDrawStackMaxLayers = 8;
@@ -38,8 +38,8 @@ public class GameBootstrap : MonoBehaviour
     public float worldDrawStackTwist = 0f;
     public float worldDrawStackTintStep = 0.012f;
     [Header("Pile 3D Depth")]
-    [Range(-35f, 35f)] public float worldDrawPileTiltX = 30f;
-    [Range(-25f, 25f)] public float worldDrawPileTiltY = -6f;
+    [Range(-45f, 45f)] public float worldDrawPileTiltX = 34f;
+    [Range(-35f, 35f)] public float worldDrawPileTiltY = -14f;
     [Range(-35f, 35f)] public float worldDiscardTiltX = 10f;
     [Range(-25f, 25f)] public float worldDiscardTiltY = 6f;
     public bool worldDrawScaleWithCount = false;
@@ -916,7 +916,7 @@ public class GameBootstrap : MonoBehaviour
                     1f,
                     Mathf.Pow(deckFill01, Mathf.Max(0.01f, worldDrawSingleCardDepthCurve))
                 );
-                sr.color = Color.Lerp(Color.white, new Color(0.9f, 0.91f, 0.94f, 1f), depth01 * 0.7f);
+                sr.color = Color.Lerp(Color.white, new Color(0.76f, 0.78f, 0.82f, 1f), depth01 * 0.9f);
                 sr.transform.localPosition = worldDrawPileOffset + (worldDrawSingleCardDepthOffset * depthIndex * depthScale * pileScale);
                 sr.transform.localRotation = Quaternion.identity;
             }
