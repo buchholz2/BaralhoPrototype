@@ -26,13 +26,10 @@ public class GameBootstrap : MonoBehaviour
     public bool showWorldDrawPile = true;
     [Header("Draw Pile Visual")]
     public bool worldDrawSingleCardVisual = true;
-    public bool worldDrawShowBody = true;
-    [Range(0.02f, 0.2f)] public float worldDrawBodyThickness = 0.085f;
-    [Range(0.005f, 0.12f)] public float worldDrawBodyThicknessMin = 0.022f;
-    [Range(0.4f, 2.2f)] public float worldDrawBodyCountCurve = 1.05f;
-    [Range(0f, 0.2f)] public float worldDrawBodyInset = 0.028f;
-    [Range(0f, 0.7f)] public float worldDrawBodySideShift = 0.24f;
-    public Color worldDrawBodyColor = new Color(0.94f, 0.95f, 0.97f, 1f);
+    [Range(1, 6)] public int worldDrawSingleCardDepthLayers = 4;
+    public Vector3 worldDrawSingleCardDepthOffset = new Vector3(0.006f, -0.0075f, 0.001f);
+    [Range(0f, 1f)] public float worldDrawSingleCardMinDepth = 0.18f;
+    [Range(0.5f, 2.2f)] public float worldDrawSingleCardDepthCurve = 1.05f;
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
     public int worldDrawStackMaxLayers = 8;
@@ -126,7 +123,6 @@ public class GameBootstrap : MonoBehaviour
     private Transform _worldDrawVisualRoot;
     private readonly List<SpriteRenderer> _worldDrawStack = new List<SpriteRenderer>();
     private SpriteRenderer _worldDrawShadow;
-    private SpriteRenderer _worldDrawBody;
     private SpriteRenderer _worldDiscardShadow;
     private Light _physicalLight;
     private Material _physicalCardMaterial;
@@ -145,7 +141,6 @@ public class GameBootstrap : MonoBehaviour
     private CanvasGroup _sortSuitButtonGroup;
     private CanvasGroup _sortNumberButtonGroup;
     private SortButtonLockState _sortButtonLockState = SortButtonLockState.None;
-    private static Sprite s_whiteSprite;
 
     private enum SortButtonLockState
     {
@@ -869,12 +864,14 @@ public class GameBootstrap : MonoBehaviour
         }
 
         int deckCount = _deck != null ? _deck.Count : 0;
+        float deckFill01 = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
         int layers = 0;
         if (deckCount > 0)
         {
             if (worldDrawSingleCardVisual)
             {
-                layers = 1;
+                int maxLayers = Mathf.Max(1, worldDrawSingleCardDepthLayers);
+                layers = Mathf.Clamp(1 + Mathf.RoundToInt((maxLayers - 1) * deckFill01), 1, maxLayers);
             }
             else if (showWorldDrawStack && worldDrawStackCardsPerLayer > 0)
             {
@@ -900,23 +897,6 @@ public class GameBootstrap : MonoBehaviour
         float pileScale = EvaluateWorldDrawScale(deckCount);
         _worldDrawVisualRoot.localRotation = Quaternion.Euler(worldDrawPileTiltX, worldDrawPileTiltY, 0f);
 
-        float bodyThicknessWorld = 0f;
-        float topYOffset = 0f;
-        float bodyXShift = 0f;
-        if (worldDrawSingleCardVisual && _back != null && deckCount > 0)
-        {
-            float countT = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
-            float shapedT = Mathf.Pow(countT, Mathf.Max(0.01f, worldDrawBodyCountCurve));
-            float normalizedThickness = Mathf.Lerp(
-                Mathf.Min(worldDrawBodyThicknessMin, worldDrawBodyThickness),
-                Mathf.Max(worldDrawBodyThicknessMin, worldDrawBodyThickness),
-                shapedT
-            );
-            bodyThicknessWorld = Mathf.Max(0.005f, _back.bounds.size.y * pileScale * normalizedThickness);
-            topYOffset = bodyThicknessWorld * 0.16f;
-            bodyXShift = bodyThicknessWorld * Mathf.Max(0f, worldDrawBodySideShift);
-        }
-
         for (int i = 0; i < _worldDrawStack.Count; i++)
         {
             var sr = _worldDrawStack[i];
@@ -926,62 +906,26 @@ public class GameBootstrap : MonoBehaviour
 
             sr.sprite = _back;
             sr.sortingOrder = GetWorldSortingOrderForIndex(0) - 2 + i;
-            sr.color = Color.Lerp(Color.white, new Color(0.86f, 0.86f, 0.86f, 1f), Mathf.Clamp01(i * worldDrawStackTintStep));
-            Vector3 layerPos = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
             if (worldDrawSingleCardVisual)
-                layerPos.y += topYOffset;
-            sr.transform.localPosition = layerPos;
-            sr.transform.localRotation = Quaternion.Euler(0f, 0f, worldDrawStackTwist * i);
+            {
+                int depthIndex = (layers - 1) - i;
+                float depth01 = layers > 1 ? (depthIndex / (float)(layers - 1)) : 0f;
+                float depthScale = Mathf.Lerp(
+                    Mathf.Clamp01(worldDrawSingleCardMinDepth),
+                    1f,
+                    Mathf.Pow(deckFill01, Mathf.Max(0.01f, worldDrawSingleCardDepthCurve))
+                );
+                sr.color = Color.Lerp(Color.white, new Color(0.9f, 0.91f, 0.94f, 1f), depth01 * 0.7f);
+                sr.transform.localPosition = worldDrawPileOffset + (worldDrawSingleCardDepthOffset * depthIndex * depthScale * pileScale);
+                sr.transform.localRotation = Quaternion.identity;
+            }
+            else
+            {
+                sr.color = Color.Lerp(Color.white, new Color(0.86f, 0.86f, 0.86f, 1f), Mathf.Clamp01(i * worldDrawStackTintStep));
+                sr.transform.localPosition = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
+                sr.transform.localRotation = Quaternion.Euler(0f, 0f, worldDrawStackTwist * i);
+            }
             sr.transform.localScale = new Vector3(pileScale, pileScale, 1f);
-        }
-
-        if (_worldDrawBody == null)
-        {
-            var existingBody = _worldDrawVisualRoot.Find("Body");
-            if (existingBody != null)
-                _worldDrawBody = existingBody.GetComponent<SpriteRenderer>();
-            if (_worldDrawBody == null)
-            {
-                var bodyGo = new GameObject("Body");
-                bodyGo.transform.SetParent(_worldDrawVisualRoot, false);
-                _worldDrawBody = bodyGo.AddComponent<SpriteRenderer>();
-            }
-        }
-
-        bool showBody = worldDrawSingleCardVisual && worldDrawShowBody && showWorldDrawPile && deckCount > 0 && _back != null;
-        if (_worldDrawBody != null)
-        {
-            _worldDrawBody.gameObject.SetActive(showBody);
-            if (showBody)
-            {
-                var topSprite = (_worldDrawStack.Count > 0 && _worldDrawStack[0].sprite != null) ? _worldDrawStack[0].sprite : _back;
-                var cardBounds = topSprite != null ? topSprite.bounds : new Bounds(Vector3.zero, new Vector3(1.4f, 1.9f, 0f));
-                float inset = Mathf.Clamp01(worldDrawBodyInset);
-                float width = Mathf.Max(0.01f, cardBounds.size.x * pileScale * (1f - inset * 2f));
-                float thickness = bodyThicknessWorld;
-                if (thickness <= 0.0001f)
-                {
-                    thickness = Mathf.Max(0.005f, cardBounds.size.y * pileScale * Mathf.Max(0.02f, worldDrawBodyThickness));
-                }
-
-                var bodySprite = GetWhiteSprite();
-                _worldDrawBody.sprite = bodySprite;
-                _worldDrawBody.color = worldDrawBodyColor;
-                _worldDrawBody.sortingOrder = GetWorldSortingOrderForIndex(0) - 3;
-                _worldDrawBody.transform.localRotation = Quaternion.identity;
-                _worldDrawBody.transform.localPosition = worldDrawPileOffset + new Vector3(
-                    bodyXShift,
-                    topYOffset - ((cardBounds.size.y * pileScale) * 0.5f) - (thickness * 0.5f),
-                    -0.0015f
-                );
-
-                Vector3 bodyUnitSize = bodySprite != null ? bodySprite.bounds.size : new Vector3(0.1f, 0.1f, 0.1f);
-                _worldDrawBody.transform.localScale = new Vector3(
-                    width / Mathf.Max(0.0001f, bodyUnitSize.x),
-                    thickness / Mathf.Max(0.0001f, bodyUnitSize.y),
-                    1f
-                );
-            }
         }
 
         if (_worldDrawShadow == null)
@@ -1004,7 +948,7 @@ public class GameBootstrap : MonoBehaviour
             {
                 _worldDrawShadow.sprite = _back;
                 _worldDrawShadow.color = new Color(0f, 0f, 0f, Mathf.Lerp(0.06f, 0.12f, pileScale));
-                _worldDrawShadow.sortingOrder = showBody ? (GetWorldSortingOrderForIndex(0) - 4) : (GetWorldSortingOrderForIndex(0) - 3);
+                _worldDrawShadow.sortingOrder = GetWorldSortingOrderForIndex(0) - 3;
                 _worldDrawShadow.transform.localPosition = worldDrawPileOffset + (new Vector3(0.016f, -0.022f, 0f) * pileScale);
                 _worldDrawShadow.transform.localRotation = Quaternion.identity;
                 _worldDrawShadow.transform.localScale = new Vector3(0.9f * pileScale, 0.76f * pileScale, 1f);
@@ -1031,22 +975,6 @@ public class GameBootstrap : MonoBehaviour
         if (deckCount <= 0) return Mathf.Clamp(worldDrawMinScale, 0.2f, 1f);
         float t = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
         return Mathf.Lerp(Mathf.Clamp(worldDrawMinScale, 0.2f, 1f), 1f, t);
-    }
-
-    private static Sprite GetWhiteSprite()
-    {
-        if (s_whiteSprite != null)
-            return s_whiteSprite;
-
-        var tex = Texture2D.whiteTexture;
-        s_whiteSprite = Sprite.Create(
-            tex,
-            new Rect(0f, 0f, tex.width, tex.height),
-            new Vector2(0.5f, 0.5f),
-            100f
-        );
-        s_whiteSprite.name = "RuntimeWhiteSprite";
-        return s_whiteSprite;
     }
 
     private void DisableWorldDiscardShadowVisual()
