@@ -26,6 +26,8 @@ public class GameBootstrap : MonoBehaviour
     public bool showWorldDrawPile = true;
     [Header("Draw Pile Visual")]
     public bool worldDrawSingleCardVisual = true;
+    [Range(1, 6)] public int worldDrawSingleCardDepthLayers = 3;
+    public Vector3 worldDrawSingleCardDepthOffset = new Vector3(0f, -0.0012f, 0.0011f);
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
     public int worldDrawStackMaxLayers = 8;
@@ -33,6 +35,11 @@ public class GameBootstrap : MonoBehaviour
     public Vector3 worldDrawStackOffset = new Vector3(0.003f, -0.0022f, 0.0009f);
     public float worldDrawStackTwist = 0f;
     public float worldDrawStackTintStep = 0.012f;
+    [Header("Pile 3D Depth")]
+    [Range(-35f, 35f)] public float worldDrawPileTiltX = 12f;
+    [Range(-25f, 25f)] public float worldDrawPileTiltY = -6f;
+    [Range(-35f, 35f)] public float worldDiscardTiltX = 10f;
+    [Range(-25f, 25f)] public float worldDiscardTiltY = 6f;
     [Range(0.2f, 1f)] public float worldDrawMinScale = 0.45f;
     [Header("Draw To Hand FX")]
     public float worldDrawToHandLift = 0.26f;
@@ -402,9 +409,9 @@ public class GameBootstrap : MonoBehaviour
         seq.Append(card.transform.DOMove(target + Vector3.up * worldDiscardLift, upDuration).SetEase(Ease.OutCubic));
         seq.Append(card.transform.DOMove(target, downDuration).SetEase(Ease.InOutSine));
         seq.Insert(0f, card.transform.DOScale(Vector3.one * Random.Range(0.985f, 1.015f), blendDuration).SetEase(Ease.OutCubic));
-        seq.Insert(0f, card.transform.DORotateQuaternion(
-            Quaternion.Euler(WorldCardTiltX, 0f, Random.Range(-worldDiscardTwist, worldDiscardTwist)), blendDuration
-        ).SetEase(Ease.OutCubic));
+        float discardTwist = Random.Range(-worldDiscardTwist, worldDiscardTwist);
+        Quaternion discardTargetRot = Quaternion.Euler(worldDiscardTiltX, worldDiscardTiltY, discardTwist);
+        seq.Insert(0f, card.transform.DORotateQuaternion(discardTargetRot, blendDuration).SetEase(Ease.OutCubic));
         if (worldDiscardSettle > 0f)
         {
             Vector3 settle = target + Vector3.down * Mathf.Abs(worldDiscardArc);
@@ -860,7 +867,12 @@ public class GameBootstrap : MonoBehaviour
         {
             if (worldDrawSingleCardVisual)
             {
-                layers = 1;
+                int cardsPerLayer = Mathf.Max(1, worldDrawStackCardsPerLayer);
+                layers = Mathf.Clamp(
+                    Mathf.CeilToInt(deckCount / (float)cardsPerLayer),
+                    1,
+                    Mathf.Max(1, worldDrawSingleCardDepthLayers)
+                );
             }
             else if (showWorldDrawStack && worldDrawStackCardsPerLayer > 0)
             {
@@ -884,7 +896,7 @@ public class GameBootstrap : MonoBehaviour
         }
 
         float pileScale = EvaluateWorldDrawScale(deckCount);
-        _worldDrawVisualRoot.localRotation = Quaternion.identity;
+        _worldDrawVisualRoot.localRotation = Quaternion.Euler(worldDrawPileTiltX, worldDrawPileTiltY, 0f);
 
         for (int i = 0; i < _worldDrawStack.Count; i++)
         {
@@ -896,8 +908,10 @@ public class GameBootstrap : MonoBehaviour
             sr.sprite = _back;
             sr.sortingOrder = GetWorldSortingOrderForIndex(0) - 2 + i;
             sr.color = Color.Lerp(Color.white, new Color(0.86f, 0.86f, 0.86f, 1f), Mathf.Clamp01(i * worldDrawStackTintStep));
-            sr.transform.localPosition = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
-            sr.transform.localRotation = Quaternion.Euler(0f, 0f, worldDrawStackTwist * i);
+            Vector3 layerOffset = worldDrawSingleCardVisual ? worldDrawSingleCardDepthOffset : worldDrawStackOffset;
+            float layerTwist = worldDrawSingleCardVisual ? 0f : worldDrawStackTwist;
+            sr.transform.localPosition = worldDrawPileOffset + (layerOffset * i * pileScale);
+            sr.transform.localRotation = Quaternion.Euler(0f, 0f, layerTwist * i);
             sr.transform.localScale = new Vector3(pileScale, pileScale, 1f);
         }
 
