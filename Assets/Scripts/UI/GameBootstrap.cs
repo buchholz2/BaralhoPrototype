@@ -35,9 +35,12 @@ public class GameBootstrap : MonoBehaviour
     [Header("Draw To Hand FX")]
     public float worldDrawToHandLift = 0.26f;
     public float worldDrawToHandRiseDuration = 0.12f;
+    public float worldDrawToHandFlipHalf = 0.12f;
+    public float worldDrawToHandRevealHold = 2f;
     public float worldDrawToHandTravelDuration = 0.22f;
     public float worldDrawToHandSettleDuration = 0.12f;
     public float worldDrawToHandScale = 1.08f;
+    public Vector3 worldHandCardScale = Vector3.one;
 
     public bool useWorldDiscardStack = true;
     public int worldDiscardStackMaxLayers = 18;
@@ -113,6 +116,7 @@ public class GameBootstrap : MonoBehaviour
     private Light _physicalLight;
     private Material _physicalCardMaterial;
     private float _lastDrawAt = -10f;
+    private bool _drawInProgress;
     private int _drawCount;
     private int _gapIndex = -1;
     private int _initialDrawPileCount = 1;
@@ -168,6 +172,7 @@ public class GameBootstrap : MonoBehaviour
         _worldHand.Clear();
         _drawCount = 0;
         _lastDrawAt = -10f;
+        _drawInProgress = false;
         ClearPinnedWorldCard(null);
 
         if (drawPile != null) drawPile.gameObject.SetActive(!useWorldCards || !hideUiPiles);
@@ -273,6 +278,12 @@ public class GameBootstrap : MonoBehaviour
             return;
         }
 
+        if (useWorldCards && _drawInProgress)
+        {
+            Debug.Log("GameBootstrap: aguardando animacao de compra atual.");
+            return;
+        }
+
         _lastDrawAt = now;
         
         if (useWorldCards) ClearPinnedWorldCard(null);
@@ -281,6 +292,7 @@ public class GameBootstrap : MonoBehaviour
         if (useWorldCards)
         {
             _drawCount++;
+            _drawInProgress = true;
             AddWorldCard(card);
         }
         else
@@ -546,6 +558,7 @@ public class GameBootstrap : MonoBehaviour
         if (worldHandRoot == null)
         {
             Debug.LogError("GameBootstrap: worldHandRoot nulo, nao e possivel adicionar carta.");
+            _drawInProgress = false;
             return;
         }
         
@@ -553,6 +566,7 @@ public class GameBootstrap : MonoBehaviour
         if (template == null)
         {
             Debug.LogError("GameBootstrap: Nenhum CardWorldView template encontrado. Configure worldCardPrefab ou adicione um CardWorldView em worldHandRoot.");
+            _drawInProgress = false;
             return;
         }
 
@@ -562,12 +576,13 @@ public class GameBootstrap : MonoBehaviour
             ? (worldDrawRoot.position + worldDrawPileOffset)
             : worldHandRoot.position;
         view.transform.position = drawStart;
-        BindWorldCard(view, card, showFaces);
+        view.transform.localScale = worldHandCardScale;
+        BindWorldCard(view, card, false);
 
         _worldHand.Add(view);
         _hand.Add(card);
         int targetIndex = _worldHand.Count - 1;
-        PlayWorldDrawToHandAnimation(view, drawStart, targetIndex);
+        PlayWorldDrawToHandAnimation(view, drawStart, targetIndex, () => _drawInProgress = false);
         ApplyWorld();
         UpdateWorldDrawPileVisual();
     }
@@ -583,35 +598,50 @@ public class GameBootstrap : MonoBehaviour
         handUI.AddCardWorld(card, startWorld, true, showFaces);
     }
 
-    private void PlayWorldDrawToHandAnimation(CardWorldView view, Vector3 startWorld, int targetIndex)
+    private void PlayWorldDrawToHandAnimation(CardWorldView view, Vector3 startWorld, int targetIndex, TweenCallback onCompleted = null)
     {
         if (view == null || worldHandRoot == null || worldHandLayout == null)
+        {
+            _drawInProgress = false;
+            onCompleted?.Invoke();
             return;
+        }
 
         view.SetInteractive(false);
         view.SetAnimating(true);
+        view.SetFaceUp(false);
 
         int safeCount = Mathf.Max(1, _worldHand.Count);
         int safeIndex = Mathf.Clamp(targetIndex, 0, safeCount - 1);
         worldHandLayout.GetLayout(safeIndex, safeCount, out var targetLocal, out var targetAngle);
         Vector3 targetWorld = worldHandRoot.TransformPoint(targetLocal);
         Quaternion targetRot = Quaternion.Euler(WorldCardTiltX, 0f, targetAngle);
+        Vector3 baseScale = worldHandCardScale.sqrMagnitude > 0.0001f ? worldHandCardScale : Vector3.one;
 
         float riseDuration = Mathf.Max(0.05f, worldDrawToHandRiseDuration);
+        float flipHalfDuration = Mathf.Max(0.05f, worldDrawToHandFlipHalf);
+        float revealHold = Mathf.Max(0f, worldDrawToHandRevealHold);
         float travelDuration = Mathf.Max(0.05f, worldDrawToHandTravelDuration);
         float settleDuration = Mathf.Max(0f, worldDrawToHandSettleDuration);
-        float peakScale = Mathf.Max(1f, worldDrawToHandScale);
+        float revealScaleFactor = Mathf.Max(1f, worldDrawToHandScale);
+        Vector3 revealScale = baseScale * revealScaleFactor;
 
         view.SetSortingOrder(GetWorldSortingOrderForIndex(safeIndex) + 1200);
         view.transform.DOKill();
+        view.transform.localScale = baseScale;
 
         var seq = DOTween.Sequence();
         var riseTarget = startWorld + Vector3.up * worldDrawToHandLift;
         seq.Append(view.transform.DOMove(riseTarget, riseDuration).SetEase(Ease.OutCubic));
-        seq.Join(view.transform.DOScale(Vector3.one * peakScale, riseDuration).SetEase(Ease.OutCubic));
+        seq.Join(view.transform.DOScale(revealScale, riseDuration).SetEase(Ease.OutCubic));
+        seq.Append(view.transform.DOScaleX(0f, flipHalfDuration).SetEase(Ease.InSine));
+        seq.AppendCallback(() => view.SetFaceUp(true));
+        seq.Append(view.transform.DOScaleX(revealScale.x, flipHalfDuration).SetEase(Ease.OutBack));
+        if (revealHold > 0f)
+            seq.AppendInterval(revealHold);
         seq.Append(view.transform.DOMove(targetWorld, travelDuration).SetEase(Ease.InOutSine));
-        seq.Join(view.transform.DORotateQuaternion(targetRot, travelDuration).SetEase(Ease.OutSine));
-        seq.Join(view.transform.DOScale(Vector3.one, travelDuration).SetEase(Ease.OutSine));
+        seq.Join(view.transform.DORotateQuaternion(targetRot, travelDuration).SetEase(Ease.InOutSine));
+        seq.Join(view.transform.DOScale(baseScale, travelDuration).SetEase(Ease.OutSine));
 
         if (settleDuration > 0f)
         {
@@ -620,14 +650,29 @@ public class GameBootstrap : MonoBehaviour
             seq.Append(view.transform.DOMove(targetWorld, settleDuration * 0.55f).SetEase(Ease.OutSine));
         }
 
-        seq.OnComplete(() =>
+        bool completed = false;
+        void Finish()
         {
+            if (completed) return;
+            completed = true;
             view.transform.localPosition = targetLocal;
             view.transform.localRotation = targetRot;
-            view.transform.localScale = Vector3.one;
+            view.transform.localScale = baseScale;
+            view.SetFaceUp(showFaces);
             view.SetInteractive(true);
             view.SetAnimating(false);
             ApplyWorld();
+            onCompleted?.Invoke();
+        }
+
+        seq.OnComplete(Finish);
+        seq.OnKill(() =>
+        {
+            if (!completed)
+            {
+                _drawInProgress = false;
+                Finish();
+            }
         });
     }
 
