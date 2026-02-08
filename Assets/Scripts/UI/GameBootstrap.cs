@@ -26,8 +26,10 @@ public class GameBootstrap : MonoBehaviour
     public bool showWorldDrawPile = true;
     [Header("Draw Pile Visual")]
     public bool worldDrawSingleCardVisual = true;
-    [Range(1, 6)] public int worldDrawSingleCardDepthLayers = 3;
-    public Vector3 worldDrawSingleCardDepthOffset = new Vector3(0f, -0.0012f, 0.0011f);
+    public bool worldDrawShowBody = true;
+    [Range(0.02f, 0.2f)] public float worldDrawBodyThickness = 0.085f;
+    [Range(0f, 0.2f)] public float worldDrawBodyInset = 0.028f;
+    public Color worldDrawBodyColor = new Color(0.94f, 0.95f, 0.97f, 1f);
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
     public int worldDrawStackMaxLayers = 8;
@@ -121,6 +123,7 @@ public class GameBootstrap : MonoBehaviour
     private Transform _worldDrawVisualRoot;
     private readonly List<SpriteRenderer> _worldDrawStack = new List<SpriteRenderer>();
     private SpriteRenderer _worldDrawShadow;
+    private SpriteRenderer _worldDrawBody;
     private SpriteRenderer _worldDiscardShadow;
     private Light _physicalLight;
     private Material _physicalCardMaterial;
@@ -139,6 +142,7 @@ public class GameBootstrap : MonoBehaviour
     private CanvasGroup _sortSuitButtonGroup;
     private CanvasGroup _sortNumberButtonGroup;
     private SortButtonLockState _sortButtonLockState = SortButtonLockState.None;
+    private static Sprite s_whiteSprite;
 
     private enum SortButtonLockState
     {
@@ -867,12 +871,7 @@ public class GameBootstrap : MonoBehaviour
         {
             if (worldDrawSingleCardVisual)
             {
-                int cardsPerLayer = Mathf.Max(1, worldDrawStackCardsPerLayer);
-                layers = Mathf.Clamp(
-                    Mathf.CeilToInt(deckCount / (float)cardsPerLayer),
-                    1,
-                    Mathf.Max(1, worldDrawSingleCardDepthLayers)
-                );
+                layers = 1;
             }
             else if (showWorldDrawStack && worldDrawStackCardsPerLayer > 0)
             {
@@ -908,11 +907,54 @@ public class GameBootstrap : MonoBehaviour
             sr.sprite = _back;
             sr.sortingOrder = GetWorldSortingOrderForIndex(0) - 2 + i;
             sr.color = Color.Lerp(Color.white, new Color(0.86f, 0.86f, 0.86f, 1f), Mathf.Clamp01(i * worldDrawStackTintStep));
-            Vector3 layerOffset = worldDrawSingleCardVisual ? worldDrawSingleCardDepthOffset : worldDrawStackOffset;
-            float layerTwist = worldDrawSingleCardVisual ? 0f : worldDrawStackTwist;
-            sr.transform.localPosition = worldDrawPileOffset + (layerOffset * i * pileScale);
-            sr.transform.localRotation = Quaternion.Euler(0f, 0f, layerTwist * i);
+            sr.transform.localPosition = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
+            sr.transform.localRotation = Quaternion.Euler(0f, 0f, worldDrawStackTwist * i);
             sr.transform.localScale = new Vector3(pileScale, pileScale, 1f);
+        }
+
+        if (_worldDrawBody == null)
+        {
+            var existingBody = _worldDrawVisualRoot.Find("Body");
+            if (existingBody != null)
+                _worldDrawBody = existingBody.GetComponent<SpriteRenderer>();
+            if (_worldDrawBody == null)
+            {
+                var bodyGo = new GameObject("Body");
+                bodyGo.transform.SetParent(_worldDrawVisualRoot, false);
+                _worldDrawBody = bodyGo.AddComponent<SpriteRenderer>();
+            }
+        }
+
+        bool showBody = worldDrawSingleCardVisual && worldDrawShowBody && showWorldDrawPile && deckCount > 0 && _back != null;
+        if (_worldDrawBody != null)
+        {
+            _worldDrawBody.gameObject.SetActive(showBody);
+            if (showBody)
+            {
+                var topSprite = (_worldDrawStack.Count > 0 && _worldDrawStack[0].sprite != null) ? _worldDrawStack[0].sprite : _back;
+                var cardBounds = topSprite != null ? topSprite.bounds : new Bounds(Vector3.zero, new Vector3(1.4f, 1.9f, 0f));
+                float inset = Mathf.Clamp01(worldDrawBodyInset);
+                float width = Mathf.Max(0.01f, cardBounds.size.x * pileScale * (1f - inset * 2f));
+                float thickness = Mathf.Max(0.005f, cardBounds.size.y * pileScale * Mathf.Max(0.02f, worldDrawBodyThickness));
+
+                var bodySprite = GetWhiteSprite();
+                _worldDrawBody.sprite = bodySprite;
+                _worldDrawBody.color = worldDrawBodyColor;
+                _worldDrawBody.sortingOrder = GetWorldSortingOrderForIndex(0) - 3;
+                _worldDrawBody.transform.localRotation = Quaternion.identity;
+                _worldDrawBody.transform.localPosition = worldDrawPileOffset + new Vector3(
+                    0f,
+                    -((cardBounds.size.y * pileScale) * 0.5f) + (thickness * 0.5f),
+                    -0.0015f
+                );
+
+                Vector3 bodyUnitSize = bodySprite != null ? bodySprite.bounds.size : new Vector3(0.1f, 0.1f, 0.1f);
+                _worldDrawBody.transform.localScale = new Vector3(
+                    width / Mathf.Max(0.0001f, bodyUnitSize.x),
+                    thickness / Mathf.Max(0.0001f, bodyUnitSize.y),
+                    1f
+                );
+            }
         }
 
         if (_worldDrawShadow == null)
@@ -935,7 +977,7 @@ public class GameBootstrap : MonoBehaviour
             {
                 _worldDrawShadow.sprite = _back;
                 _worldDrawShadow.color = new Color(0f, 0f, 0f, Mathf.Lerp(0.06f, 0.12f, pileScale));
-                _worldDrawShadow.sortingOrder = GetWorldSortingOrderForIndex(0) - 3;
+                _worldDrawShadow.sortingOrder = showBody ? (GetWorldSortingOrderForIndex(0) - 4) : (GetWorldSortingOrderForIndex(0) - 3);
                 _worldDrawShadow.transform.localPosition = worldDrawPileOffset + (new Vector3(0.016f, -0.022f, 0f) * pileScale);
                 _worldDrawShadow.transform.localRotation = Quaternion.identity;
                 _worldDrawShadow.transform.localScale = new Vector3(0.9f * pileScale, 0.76f * pileScale, 1f);
@@ -962,6 +1004,22 @@ public class GameBootstrap : MonoBehaviour
         if (deckCount <= 0) return Mathf.Clamp(worldDrawMinScale, 0.2f, 1f);
         float t = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
         return Mathf.Lerp(Mathf.Clamp(worldDrawMinScale, 0.2f, 1f), 1f, t);
+    }
+
+    private static Sprite GetWhiteSprite()
+    {
+        if (s_whiteSprite != null)
+            return s_whiteSprite;
+
+        var tex = Texture2D.whiteTexture;
+        s_whiteSprite = Sprite.Create(
+            tex,
+            new Rect(0f, 0f, tex.width, tex.height),
+            new Vector2(0.5f, 0.5f),
+            100f
+        );
+        s_whiteSprite.name = "RuntimeWhiteSprite";
+        return s_whiteSprite;
     }
 
     private void DisableWorldDiscardShadowVisual()
