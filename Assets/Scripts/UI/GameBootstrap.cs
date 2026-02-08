@@ -36,7 +36,7 @@ public class GameBootstrap : MonoBehaviour
     public float worldDrawToHandLift = 0.26f;
     public float worldDrawToHandRiseDuration = 0.12f;
     public float worldDrawToHandFlipHalf = 0.12f;
-    public float worldDrawToHandRevealHold = 2f;
+    public float worldDrawToHandRevealHold = 1f;
     public float worldDrawToHandTravelDuration = 0.22f;
     public float worldDrawToHandSettleDuration = 0.12f;
     public float worldDrawToHandScale = 1.08f;
@@ -247,6 +247,8 @@ public class GameBootstrap : MonoBehaviour
         for (int i = n; i < pool.Count; i++) if (pool[i] != null) pool[i].gameObject.SetActive(false);
 
         SortWorld();
+        if (_worldHand.Count > 0 && _worldHand[0] != null)
+            worldHandCardScale = _worldHand[0].transform.localScale;
         ApplyWorld(true);
         UpdateWorldDrawPileVisual();
     }
@@ -576,13 +578,14 @@ public class GameBootstrap : MonoBehaviour
             ? (worldDrawRoot.position + worldDrawPileOffset)
             : worldHandRoot.position;
         view.transform.position = drawStart;
-        view.transform.localScale = worldHandCardScale;
+        Vector3 handScale = ResolveWorldHandCardScale(view);
+        view.transform.localScale = handScale;
         BindWorldCard(view, card, false);
 
         _worldHand.Add(view);
         _hand.Add(card);
         int targetIndex = _worldHand.Count - 1;
-        PlayWorldDrawToHandAnimation(view, drawStart, targetIndex, () => _drawInProgress = false);
+        PlayWorldDrawToHandAnimation(view, drawStart, targetIndex, handScale, () => _drawInProgress = false);
         ApplyWorld();
         UpdateWorldDrawPileVisual();
     }
@@ -598,7 +601,27 @@ public class GameBootstrap : MonoBehaviour
         handUI.AddCardWorld(card, startWorld, true, showFaces);
     }
 
-    private void PlayWorldDrawToHandAnimation(CardWorldView view, Vector3 startWorld, int targetIndex, TweenCallback onCompleted = null)
+    private Vector3 ResolveWorldHandCardScale(CardWorldView fallback = null)
+    {
+        for (int i = 0; i < _worldHand.Count; i++)
+        {
+            var card = _worldHand[i];
+            if (card == null) continue;
+            var scale = card.transform.localScale;
+            if (scale.sqrMagnitude > 0.0001f)
+                return scale;
+        }
+
+        if (worldHandCardScale.sqrMagnitude > 0.0001f)
+            return worldHandCardScale;
+
+        if (fallback != null && fallback.transform.localScale.sqrMagnitude > 0.0001f)
+            return fallback.transform.localScale;
+
+        return Vector3.one;
+    }
+
+    private void PlayWorldDrawToHandAnimation(CardWorldView view, Vector3 startWorld, int targetIndex, Vector3 handScale, TweenCallback onCompleted = null)
     {
         if (view == null || worldHandRoot == null || worldHandLayout == null)
         {
@@ -616,7 +639,8 @@ public class GameBootstrap : MonoBehaviour
         worldHandLayout.GetLayout(safeIndex, safeCount, out var targetLocal, out var targetAngle);
         Vector3 targetWorld = worldHandRoot.TransformPoint(targetLocal);
         Quaternion targetRot = Quaternion.Euler(WorldCardTiltX, 0f, targetAngle);
-        Vector3 baseScale = worldHandCardScale.sqrMagnitude > 0.0001f ? worldHandCardScale : Vector3.one;
+        Vector3 baseScale = handScale.sqrMagnitude > 0.0001f ? handScale : ResolveWorldHandCardScale(view);
+        worldHandCardScale = baseScale;
 
         float riseDuration = Mathf.Max(0.05f, worldDrawToHandRiseDuration);
         float flipHalfDuration = Mathf.Max(0.05f, worldDrawToHandFlipHalf);
