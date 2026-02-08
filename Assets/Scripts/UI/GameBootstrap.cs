@@ -28,7 +28,10 @@ public class GameBootstrap : MonoBehaviour
     public bool worldDrawSingleCardVisual = true;
     public bool worldDrawShowBody = true;
     [Range(0.02f, 0.2f)] public float worldDrawBodyThickness = 0.085f;
+    [Range(0.005f, 0.12f)] public float worldDrawBodyThicknessMin = 0.022f;
+    [Range(0.4f, 2.2f)] public float worldDrawBodyCountCurve = 1.05f;
     [Range(0f, 0.2f)] public float worldDrawBodyInset = 0.028f;
+    [Range(0f, 0.7f)] public float worldDrawBodySideShift = 0.24f;
     public Color worldDrawBodyColor = new Color(0.94f, 0.95f, 0.97f, 1f);
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
@@ -897,6 +900,23 @@ public class GameBootstrap : MonoBehaviour
         float pileScale = EvaluateWorldDrawScale(deckCount);
         _worldDrawVisualRoot.localRotation = Quaternion.Euler(worldDrawPileTiltX, worldDrawPileTiltY, 0f);
 
+        float bodyThicknessWorld = 0f;
+        float topYOffset = 0f;
+        float bodyXShift = 0f;
+        if (worldDrawSingleCardVisual && _back != null && deckCount > 0)
+        {
+            float countT = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
+            float shapedT = Mathf.Pow(countT, Mathf.Max(0.01f, worldDrawBodyCountCurve));
+            float normalizedThickness = Mathf.Lerp(
+                Mathf.Min(worldDrawBodyThicknessMin, worldDrawBodyThickness),
+                Mathf.Max(worldDrawBodyThicknessMin, worldDrawBodyThickness),
+                shapedT
+            );
+            bodyThicknessWorld = Mathf.Max(0.005f, _back.bounds.size.y * pileScale * normalizedThickness);
+            topYOffset = bodyThicknessWorld * 0.16f;
+            bodyXShift = bodyThicknessWorld * Mathf.Max(0f, worldDrawBodySideShift);
+        }
+
         for (int i = 0; i < _worldDrawStack.Count; i++)
         {
             var sr = _worldDrawStack[i];
@@ -907,7 +927,10 @@ public class GameBootstrap : MonoBehaviour
             sr.sprite = _back;
             sr.sortingOrder = GetWorldSortingOrderForIndex(0) - 2 + i;
             sr.color = Color.Lerp(Color.white, new Color(0.86f, 0.86f, 0.86f, 1f), Mathf.Clamp01(i * worldDrawStackTintStep));
-            sr.transform.localPosition = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
+            Vector3 layerPos = worldDrawPileOffset + (worldDrawStackOffset * i * pileScale);
+            if (worldDrawSingleCardVisual)
+                layerPos.y += topYOffset;
+            sr.transform.localPosition = layerPos;
             sr.transform.localRotation = Quaternion.Euler(0f, 0f, worldDrawStackTwist * i);
             sr.transform.localScale = new Vector3(pileScale, pileScale, 1f);
         }
@@ -935,7 +958,11 @@ public class GameBootstrap : MonoBehaviour
                 var cardBounds = topSprite != null ? topSprite.bounds : new Bounds(Vector3.zero, new Vector3(1.4f, 1.9f, 0f));
                 float inset = Mathf.Clamp01(worldDrawBodyInset);
                 float width = Mathf.Max(0.01f, cardBounds.size.x * pileScale * (1f - inset * 2f));
-                float thickness = Mathf.Max(0.005f, cardBounds.size.y * pileScale * Mathf.Max(0.02f, worldDrawBodyThickness));
+                float thickness = bodyThicknessWorld;
+                if (thickness <= 0.0001f)
+                {
+                    thickness = Mathf.Max(0.005f, cardBounds.size.y * pileScale * Mathf.Max(0.02f, worldDrawBodyThickness));
+                }
 
                 var bodySprite = GetWhiteSprite();
                 _worldDrawBody.sprite = bodySprite;
@@ -943,8 +970,8 @@ public class GameBootstrap : MonoBehaviour
                 _worldDrawBody.sortingOrder = GetWorldSortingOrderForIndex(0) - 3;
                 _worldDrawBody.transform.localRotation = Quaternion.identity;
                 _worldDrawBody.transform.localPosition = worldDrawPileOffset + new Vector3(
-                    0f,
-                    -((cardBounds.size.y * pileScale) * 0.5f) + (thickness * 0.5f),
+                    bodyXShift,
+                    topYOffset - ((cardBounds.size.y * pileScale) * 0.5f) + (thickness * 0.5f),
                     -0.0015f
                 );
 
