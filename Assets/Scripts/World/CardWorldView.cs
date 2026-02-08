@@ -31,6 +31,13 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [SerializeField, Range(0f, 0.2f)] private float shadowTiltOffset = 0.01f;
     [SerializeField] private bool shadowEllipseOnTable = true;
     [SerializeField, Range(0.4f, 1f)] private float shadowEllipseHeight = 0.66f;
+    [Header("Shadow Projection")]
+    [SerializeField] private Vector2 shadowLightDirection = new Vector2(0.35f, -1f);
+    [SerializeField, Range(0f, 1.5f)] private float shadowLiftProjection = 0.34f;
+    [SerializeField, Range(0.1f, 3f)] private float shadowLiftRange = 1.35f;
+    [SerializeField, Range(0f, 0.9f)] private float shadowLiftAlphaFade = 0.45f;
+    [SerializeField, Range(0f, 1f)] private float shadowLiftScaleBoost = 0.32f;
+    [SerializeField, Range(0f, 0.5f)] private float shadowLiftSquashBoost = 0.16f;
 
     [Header("Physical Lighting")]
     [SerializeField] private bool usePhysicalCard = false;
@@ -261,7 +268,13 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         {
             float tilt = _owner != null ? Mathf.Abs(_owner.WorldCardTiltX) : 0f;
             float t = Mathf.Clamp01(tilt / 45f);
-            var offset = shadowOffset + new Vector3(0f, -shadowTiltOffset * t, 0f);
+            float lift = GetProjectedShadowLift();
+            float liftT = Mathf.Clamp01(lift / Mathf.Max(0.0001f, shadowLiftRange));
+            var lightDir = shadowLightDirection.sqrMagnitude > 0.0001f
+                ? shadowLightDirection.normalized
+                : new Vector2(0.35f, -1f);
+            var liftOffset = new Vector3(lightDir.x, lightDir.y, 0f) * (lift * shadowLiftProjection);
+            var offset = shadowOffset + liftOffset + new Vector3(0f, -shadowTiltOffset * t, 0f);
             var pos = transform.position + offset;
             if (_owner != null)
                 pos.z = _owner.WorldShadowPlaneZ + shadowPlaneOffsetZ;
@@ -270,8 +283,14 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             _shadowRenderer.transform.position = pos;
             _shadowRenderer.transform.rotation = Quaternion.identity;
             var scale = transform.lossyScale * shadowScale;
-            scale.y *= Mathf.Lerp(1f, 1f - shadowTiltSquash, t);
+            float tiltSquash = Mathf.Lerp(1f, 1f - shadowTiltSquash, t);
+            float spread = 1f + (shadowLiftScaleBoost * liftT);
+            scale.x *= spread;
+            scale.y *= tiltSquash * Mathf.Lerp(1f, 1f + shadowLiftSquashBoost, liftT);
             _shadowRenderer.transform.localScale = scale;
+            var c = shadowColor;
+            c.a *= Mathf.Lerp(1f, 1f - shadowLiftAlphaFade, liftT);
+            _shadowRenderer.color = c;
         }
         else
         {
@@ -279,7 +298,20 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             t.localPosition = shadowOffset;
             t.localRotation = Quaternion.identity;
             t.localScale = Vector3.one * shadowScale;
+            _shadowRenderer.color = shadowColor;
         }
+    }
+
+    private float GetProjectedShadowLift()
+    {
+        bool inHand = _owner != null && _owner.GetWorldHandIndex(this) >= 0;
+        if (_dragging && inHand)
+            return Mathf.Max(0f, _lastLiftAmount);
+
+        if (inHand && (_hovering || _pinnedHighlight))
+            return Mathf.Max(0f, hoverLift);
+
+        return 0f;
     }
 
     private void EnsureShadow()
