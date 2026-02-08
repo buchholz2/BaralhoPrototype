@@ -38,10 +38,11 @@ public class GameBootstrap : MonoBehaviour
     public float worldDrawStackTwist = 0f;
     public float worldDrawStackTintStep = 0.012f;
     [Header("Pile 3D Depth")]
-    [Range(-35f, 35f)] public float worldDrawPileTiltX = 12f;
+    [Range(-35f, 35f)] public float worldDrawPileTiltX = 30f;
     [Range(-25f, 25f)] public float worldDrawPileTiltY = -6f;
     [Range(-35f, 35f)] public float worldDiscardTiltX = 10f;
     [Range(-25f, 25f)] public float worldDiscardTiltY = 6f;
+    public bool worldDrawScaleWithCount = false;
     [Range(0.2f, 1f)] public float worldDrawMinScale = 0.45f;
     [Header("Draw To Hand FX")]
     public float worldDrawToHandLift = 0.26f;
@@ -972,6 +973,9 @@ public class GameBootstrap : MonoBehaviour
 
     private float EvaluateWorldDrawScale(int deckCount)
     {
+        if (!worldDrawScaleWithCount)
+            return 1f;
+
         if (deckCount <= 0) return Mathf.Clamp(worldDrawMinScale, 0.2f, 1f);
         float t = Mathf.Clamp01(deckCount / (float)Mathf.Max(1, _initialDrawPileCount));
         return Mathf.Lerp(Mathf.Clamp(worldDrawMinScale, 0.2f, 1f), 1f, t);
