@@ -18,26 +18,27 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     public MeshFilter meshFilter;
     [SerializeField] private bool enableShadow = true;
     [SerializeField] private bool shadowOnTable = true;
-    [SerializeField] private Color shadowColor = new Color(0f, 0f, 0f, 0.075f);
-    [SerializeField] private Vector3 shadowOffset = new Vector3(0.004f, -0.008f, 0f);
+    [SerializeField] private Color shadowColor = new Color(0f, 0f, 0f, 0.06f);
+    [SerializeField] private Vector3 shadowOffset = new Vector3(0.003f, -0.006f, 0f);
     [SerializeField] private float shadowScale = 0.90f;
     [SerializeField] private int shadowOrderOffset = 1;
     [SerializeField] private float shadowPlaneOffsetZ = -0.004f;
     [SerializeField] private bool shadowUseSoftSprite = true;
-    [SerializeField, Range(0.02f, 0.2f)] private float shadowSoftness = 0.07f;
-    [SerializeField, Range(0.02f, 0.2f)] private float shadowCornerRadius = 0.14f;
+    [SerializeField, Range(0.02f, 0.2f)] private float shadowSoftness = 0.11f;
+    [SerializeField, Range(0.02f, 0.2f)] private float shadowCornerRadius = 0.16f;
     [SerializeField, Range(64, 512)] private int shadowTextureHeight = 256;
     [SerializeField, Range(0f, 0.5f)] private float shadowTiltSquash = 0.18f;
     [SerializeField, Range(0f, 0.2f)] private float shadowTiltOffset = 0.01f;
     [SerializeField] private bool shadowEllipseOnTable = true;
-    [SerializeField, Range(0.4f, 1f)] private float shadowEllipseHeight = 0.66f;
+    [SerializeField, Range(0.4f, 1f)] private float shadowEllipseHeight = 0.72f;
     [Header("Shadow Projection")]
-    [SerializeField] private Vector2 shadowLightDirection = new Vector2(0.35f, -1f);
-    [SerializeField, Range(0f, 1.5f)] private float shadowLiftProjection = 0.34f;
+    [SerializeField] private Vector2 shadowLightDirection = new Vector2(0.24f, -1f);
+    [SerializeField, Range(0f, 1.5f)] private float shadowLiftProjection = 0.23f;
     [SerializeField, Range(0.1f, 3f)] private float shadowLiftRange = 1.35f;
-    [SerializeField, Range(0f, 0.9f)] private float shadowLiftAlphaFade = 0.45f;
-    [SerializeField, Range(0f, 1f)] private float shadowLiftScaleBoost = 0.32f;
-    [SerializeField, Range(0f, 0.5f)] private float shadowLiftSquashBoost = 0.16f;
+    [SerializeField, Range(0f, 0.9f)] private float shadowLiftAlphaFade = 0.62f;
+    [SerializeField, Range(0f, 1f)] private float shadowLiftScaleBoost = 0.16f;
+    [SerializeField, Range(0f, 0.5f)] private float shadowLiftSquashBoost = 0.08f;
+    [SerializeField, Range(0f, 30f)] private float shadowLiftSmoothing = 12f;
 
     [Header("Physical Lighting")]
     [SerializeField] private bool usePhysicalCard = false;
@@ -105,6 +106,7 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     private SpriteRenderer _shadowRenderer;
     private int _lastShadowOrder = int.MinValue;
     private bool _shadowDetached;
+    private float _shadowLiftSmoothed;
     private static readonly Dictionary<int, Sprite> s_softShadowCache = new();
     private static readonly Dictionary<Sprite, Mesh> s_spriteMeshCache = new();
     private Material _physicalMaterial;
@@ -268,12 +270,23 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         {
             float tilt = _owner != null ? Mathf.Abs(_owner.WorldCardTiltX) : 0f;
             float t = Mathf.Clamp01(tilt / 45f);
-            float lift = GetProjectedShadowLift();
-            float liftT = Mathf.Clamp01(lift / Mathf.Max(0.0001f, shadowLiftRange));
+            float targetLift = GetProjectedShadowLift();
+            if (Application.isPlaying)
+            {
+                float smooth = 1f - Mathf.Exp(-Mathf.Max(0f, shadowLiftSmoothing) * Time.unscaledDeltaTime);
+                _shadowLiftSmoothed = Mathf.Lerp(_shadowLiftSmoothed, targetLift, smooth);
+            }
+            else
+            {
+                _shadowLiftSmoothed = targetLift;
+            }
+
+            float liftT = Mathf.Clamp01(_shadowLiftSmoothed / Mathf.Max(0.0001f, shadowLiftRange));
+            liftT = liftT * liftT * (3f - 2f * liftT); // smoothstep
             var lightDir = shadowLightDirection.sqrMagnitude > 0.0001f
                 ? shadowLightDirection.normalized
-                : new Vector2(0.35f, -1f);
-            var liftOffset = new Vector3(lightDir.x, lightDir.y, 0f) * (lift * shadowLiftProjection);
+                : new Vector2(0.24f, -1f);
+            var liftOffset = new Vector3(lightDir.x, lightDir.y, 0f) * (shadowLiftProjection * liftT);
             var offset = shadowOffset + liftOffset + new Vector3(0f, -shadowTiltOffset * t, 0f);
             var pos = transform.position + offset;
             if (_owner != null)
