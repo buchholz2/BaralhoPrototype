@@ -1,0 +1,395 @@
+fileFormatVersion: 2
+guid: cae9bdb0dce4b01419232950ffd5c420
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: 6696003780698105486
+    second: icons_gold_sheet_0
+  - first:
+      213: -6564145653281988840
+    second: icons_gold_sheet_1
+  - first:
+      213: 2748689893908356162
+    second: icons_gold_sheet_2
+  - first:
+      213: 3624206701685672314
+    second: icons_gold_sheet_3
+  - first:
+      213: -1623439030171497121
+    second: icons_gold_sheet_4
+  - first:
+      213: 6217127219402087292
+    second: icons_gold_sheet_5
+  - first:
+      213: 1436818122849677772
+    second: icons_gold_sheet_6
+  - first:
+      213: 1848415864742407881
+    second: icons_gold_sheet_7
+  - first:
+      213: -4287757780479571487
+    second: icons_gold_sheet_8
+  - first:
+      213: 3259517521108384282
+    second: icons_gold_sheet_9
+  - first:
+      213: 1926298015179057345
+    second: GoldIcon_0
+  - first:
+      213: -715258123455599197
+    second: GoldIcon_1
+  - first:
+      213: 8107417758459287414
+    second: GoldIcon_2
+  - first:
+      213: -4550524488651884268
+    second: GoldIcon_3
+  - first:
+      213: -6346348450054387164
+    second: GoldIcon_4
+  - first:
+      213: -3019304290450246838
+    second: GoldIcon_5
+  - first:
+      213: 2754074718543827489
+    second: GoldIcon_6
+  - first:
+      213: 7736369568890936930
+    second: GoldIcon_7
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Android
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: iOS
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: GoldIcon_0
+      rect:
+        serializedVersion: 2
+        x: 154
+        y: 619
+        width: 207
+        height: 177
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1c8a94eb6d59bba10800000000000000
+      internalID: 1926298015179057345
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_1
+      rect:
+        serializedVersion: 2
+        x: 504
+        y: 619
+        width: 209
+        height: 182
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3ad67bcb684e216f0800000000000000
+      internalID: -715258123455599197
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_2
+      rect:
+        serializedVersion: 2
+        x: 835
+        y: 619
+        width: 213
+        height: 188
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 677d8a21f75538070800000000000000
+      internalID: 8107417758459287414
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_3
+      rect:
+        serializedVersion: 2
+        x: 1180
+        y: 619
+        width: 216
+        height: 171
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4193038561a49d0c0800000000000000
+      internalID: -4550524488651884268
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_4
+      rect:
+        serializedVersion: 2
+        x: 167
+        y: 286
+        width: 188
+        height: 179
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 42a48a585bd3de7a0800000000000000
+      internalID: -6346348450054387164
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_5
+      rect:
+        serializedVersion: 2
+        x: 516
+        y: 296
+        width: 210
+        height: 168
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a4376eaaeb64916d0800000000000000
+      internalID: -3019304290450246838
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_6
+      rect:
+        serializedVersion: 2
+        x: 850
+        y: 283
+        width: 181
+        height: 182
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 12250b36d50783620800000000000000
+      internalID: 2754074718543827489
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: GoldIcon_7
+      rect:
+        serializedVersion: 2
+        x: 1192
+        y: 281
+        width: 190
+        height: 186
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 26ed2e4422b1d5b60800000000000000
+      internalID: 7736369568890936930
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 021625ee25ad4c24d837449eef3832a3
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries:
+      - key: SpriteEditor.SliceOnImport
+        value: False
+      - key: SpriteEditor.SliceSettings
+        value: '{"sliceOnImport":false,"gridCellCount":{"x":4.0,"y":2.0},"gridSpriteSize":{"x":384.0,"y":512.0},"gridSpriteOffset":{"x":0.0,"y":0.0},"gridSpritePadding":{"x":0.0,"y":0.0},"pivot":{"x":0.5,"y":0.5},"pivotPixels":{"x":0.0,"y":0.0},"autoSlicingMethod":0,"spriteAlignment":0,"pivotUnitMode":1,"slicingType":0,"keepEmptyRects":false,"isAlternate":false}'
+    nameFileIdTable:
+      GoldIcon_0: 1926298015179057345
+      GoldIcon_1: -715258123455599197
+      GoldIcon_2: 8107417758459287414
+      GoldIcon_3: -4550524488651884268
+      GoldIcon_4: -6346348450054387164
+      GoldIcon_5: -3019304290450246838
+      GoldIcon_6: 2754074718543827489
+      GoldIcon_7: 7736369568890936930
+      icons_gold_sheet_0: 6696003780698105486
+      icons_gold_sheet_1: -6564145653281988840
+      icons_gold_sheet_2: 2748689893908356162
+      icons_gold_sheet_3: 3624206701685672314
+      icons_gold_sheet_4: -1623439030171497121
+      icons_gold_sheet_5: 6217127219402087292
+      icons_gold_sheet_6: 1436818122849677772
+      icons_gold_sheet_7: 1848415864742407881
+      icons_gold_sheet_8: -4287757780479571487
+      icons_gold_sheet_9: 3259517521108384282
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
