@@ -641,6 +641,7 @@ public class GameBootstrap : MonoBehaviour
         worldHandLayout.GetLayout(safeIndex, safeCount, out var targetLocal, out var targetAngle);
         Vector3 targetWorld = worldHandRoot.TransformPoint(targetLocal);
         Quaternion targetRot = Quaternion.Euler(WorldCardTiltX, 0f, targetAngle);
+        Quaternion revealRot = Quaternion.Euler(WorldCardTiltX, 0f, 0f);
         Vector3 baseScale = handScale.sqrMagnitude > 0.0001f ? handScale : ResolveWorldHandCardScale(view);
         worldHandCardScale = baseScale;
 
@@ -655,6 +656,7 @@ public class GameBootstrap : MonoBehaviour
         view.SetSortingOrder(GetWorldSortingOrderForIndex(safeIndex) + 1200);
         view.transform.DOKill();
         view.transform.localScale = baseScale;
+        view.transform.rotation = revealRot;
 
         var seq = DOTween.Sequence();
         var riseTarget = startWorld + Vector3.up * worldDrawToHandLift;
@@ -666,7 +668,6 @@ public class GameBootstrap : MonoBehaviour
         if (revealHold > 0f)
             seq.AppendInterval(revealHold);
         seq.Append(view.transform.DOMove(targetWorld, travelDuration).SetEase(Ease.InOutSine));
-        seq.Join(view.transform.DORotateQuaternion(targetRot, travelDuration).SetEase(Ease.InOutSine));
         seq.Join(view.transform.DOScale(baseScale, travelDuration).SetEase(Ease.OutSine));
 
         if (settleDuration > 0f)
@@ -675,6 +676,9 @@ public class GameBootstrap : MonoBehaviour
             seq.Append(view.transform.DOMove(settle, settleDuration * 0.45f).SetEase(Ease.InOutSine));
             seq.Append(view.transform.DOMove(targetWorld, settleDuration * 0.55f).SetEase(Ease.OutSine));
         }
+
+        float rotateIntoHandDuration = Mathf.Max(0.08f, settleDuration > 0f ? settleDuration * 0.8f : 0.12f);
+        seq.Append(view.transform.DORotateQuaternion(targetRot, rotateIntoHandDuration).SetEase(Ease.OutSine));
 
         bool completed = false;
         void Finish()
