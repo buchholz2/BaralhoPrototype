@@ -788,6 +788,13 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         _dragTravelSqr = 0f;
 
         _owner.NotifyWorldDragBegin(this);
+
+        // Enquanto esta segurando, a carta deve permanecer acima das demais da mao.
+        int dragOrder = _restSortingOrder + 1000;
+        int idx = _owner.GetWorldHandIndex(this);
+        if (idx >= 0)
+            dragOrder = _owner.GetWorldSortingOrderForIndex(idx) + 1000;
+        SetSortingOrder(dragOrder);
     }
 
     private void DragTo(Vector2 screenPos)
@@ -832,10 +839,7 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         }
         transform.localRotation = Quaternion.Euler(_owner.WorldCardTiltX, 0f, angleZ);
         int order = _owner != null ? _owner.GetWorldSortingOrderForIndex(targetIndex) : _restSortingOrder;
-
-        // Durante reorganizacao na mao, mantem a carta no fluxo normal.
-        // So sobe para o topo quando estiver realmente perto da area de descarte.
-        SetSortingOrder(nearDiscardZone ? order + 1000 : order);
+        SetSortingOrder(order + 1000);
 
         _owner.NotifyWorldDrag(this);
     }
