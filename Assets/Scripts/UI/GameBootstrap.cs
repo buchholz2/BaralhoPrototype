@@ -24,6 +24,8 @@ public class GameBootstrap : MonoBehaviour
     public Transform worldDrawRoot;
     public float worldShadowPlaneOffset = -0.015f;
     public bool showWorldDrawPile = true;
+    [Header("Draw Pile Visual")]
+    public bool worldDrawSingleCardVisual = true;
     public Vector3 worldDrawPileOffset = Vector3.zero;
     public bool showWorldDrawStack = true;
     public int worldDrawStackMaxLayers = 8;
@@ -852,7 +854,11 @@ public class GameBootstrap : MonoBehaviour
         int layers = 0;
         if (deckCount > 0)
         {
-            if (showWorldDrawStack && worldDrawStackCardsPerLayer > 0)
+            if (worldDrawSingleCardVisual)
+            {
+                layers = 1;
+            }
+            else if (showWorldDrawStack && worldDrawStackCardsPerLayer > 0)
             {
                 layers = Mathf.Clamp(
                     Mathf.CeilToInt(deckCount / (float)worldDrawStackCardsPerLayer),
