@@ -971,7 +971,7 @@ public class GameBootstrap : MonoBehaviour
                 _worldDrawBody.transform.localRotation = Quaternion.identity;
                 _worldDrawBody.transform.localPosition = worldDrawPileOffset + new Vector3(
                     bodyXShift,
-                    topYOffset - ((cardBounds.size.y * pileScale) * 0.5f) + (thickness * 0.5f),
+                    topYOffset - ((cardBounds.size.y * pileScale) * 0.5f) - (thickness * 0.5f),
                     -0.0015f
                 );
 
