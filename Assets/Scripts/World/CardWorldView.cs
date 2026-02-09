@@ -61,6 +61,8 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [SerializeField, Range(0f, 1f)] private float physicalFallbackShadowAlpha = 0.18f;
 
     [Header("Hover")]
+    [Tooltip("Desligado para evitar qualquer movimento da mao ao apenas aproximar o mouse.")]
+    public bool enableHoverFx = false;
     public float hoverLift = 0.25f;
     public float hoverScale = 1.1f;
     public float hoverDuration = 0.2f;
@@ -86,6 +88,17 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [Range(0.04f, 0.5f)]
     [Tooltip("Tempo para suavizar a transicao de zoom ao entrar/sair da area de descarte.")]
     public float discardZoomSmoothTime = 0.16f;
+    [Header("Hand Reorder Gate")]
+    [Tooltip("Altura maxima acima do arco para permitir reorganizacao da mao.")]
+    [Range(0.01f, 1.2f)] public float reorderMaxLift = 0.58f;
+    [Tooltip("Tolerancia em pixels para cima antes de bloquear reorganizacao.")]
+    [Range(0f, 32f)] public float reorderUpwardAllowancePixels = 6f;
+    [Tooltip("Deslocamento lateral minimo para iniciar reorganizacao da mao.")]
+    [Range(4f, 48f)] public float reorderLateralUnlockPixels = 12f;
+    [Tooltip("Mesmo dentro da area de descarte, so trava reorder apos esta elevacao.")]
+    [Range(0.05f, 2f)] public float reorderDiscardLockLift = 1.05f;
+    [Tooltip("Se subir mais que isso com gesto predominantemente vertical, bloqueia reorder.")]
+    [Range(8f, 160f)] public float reorderUpwardCancelPixels = 32f;
 
     private GameBootstrap _owner;
     private Card _card;
@@ -99,12 +112,17 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     private bool _interactive = true;
     private bool _exiting;
     private bool _pinnedHighlight;
+    private bool _pointerHeld;
+    private bool _pendingDrag;
+    private bool _reorderUnlocked;
     private bool _hasRestPose;
     private int _restSortingOrder;
 
     private Vector3 _restLocalPos;
     private Vector3 _restLocalScale;
     private Vector3 _dragOffsetWorld;
+    private float _dragStartGapPosition;
+    private float _lastReorderGapPosition;
     private Vector2 _dragStartScreenPos;
     private float _dragTravelSqr;
     private float _lastLiftAmount;
@@ -125,7 +143,20 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     private bool _shadowEnabledBeforePhysical = true;
     
     public Card CardData => _card;
-    public bool IsLayoutLocked => _hovering || _dragging || _animating || _pinnedHighlight;
+    public bool IsDragging => _dragging;
+    public bool IsLayoutLocked => _dragging || _animating;
+
+    private void Update()
+    {
+        // Safety: if release event is missed, don't keep card stuck in drag/top state.
+        if (!(_dragging || _pendingDrag || _pointerHeld))
+            return;
+
+        if (IsPrimaryPointerPressed())
+            return;
+
+        EndPointerPress(GetLegacyPointerPos());
+    }
 
     private void Awake()
     {
@@ -359,7 +390,7 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             return Mathf.Max(0f, _lastLiftAmount);
 
         if (inHand && (_hovering || _pinnedHighlight))
-            return Mathf.Max(0f, hoverLift);
+            return 0f;
 
         return 0f;
     }
@@ -911,6 +942,11 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (_animating)
         {
             _hovering = false;
+            _dragging = false;
+            _pointerHeld = false;
+            _pendingDrag = false;
+            _reorderUnlocked = false;
+            _lastReorderGapPosition = 0f;
             _exiting = false;
         }
     }
@@ -922,6 +958,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         {
             _hovering = false;
             _dragging = false;
+            _pointerHeld = false;
+            _pendingDrag = false;
+            _reorderUnlocked = false;
+            _lastReorderGapPosition = 0f;
             _pinnedHighlight = false;
             _tMove?.Kill();
             _tScale?.Kill();
@@ -969,15 +1009,14 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         _exiting = false;
         _tMove?.Kill();
         _tScale?.Kill();
-        _tMove = transform.DOLocalMove(_restLocalPos + Vector3.up * hoverLift, hoverDuration).SetEase(Ease.OutSine);
+        // Highlight keeps card anchored in hand; only scale changes.
+        _tMove = transform.DOLocalMove(_restLocalPos, hoverDuration).SetEase(Ease.OutSine);
         _tScale = transform.DOScale(_restLocalScale * hoverScale, hoverDuration).SetEase(Ease.OutSine);
-
-        int topOrder = _restSortingOrder + 500;
-        SetSortingOrder(topOrder);
     }
 
     private void BeginHover()
     {
+        if (!enableHoverFx) return;
         if (!_interactive) return;
         if (_pinnedHighlight) return;
         if (_owner == null || _animating || _dragging) return;
@@ -997,12 +1036,16 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         _tMove?.Kill();
         _tScale?.Kill();
-        _tMove = transform.DOLocalMove(_restLocalPos + Vector3.up * hoverLift, hoverDuration).SetEase(Ease.OutSine);
         _tScale = transform.DOScale(_restLocalScale * hoverScale, hoverDuration).SetEase(Ease.OutSine);
     }
 
     private void EndHover()
     {
+        if (!enableHoverFx)
+        {
+            _hovering = false;
+            return;
+        }
         if (!_interactive) return;
         if (_pinnedHighlight) return;
         if (_owner == null || !_hovering) return;
@@ -1011,7 +1054,6 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         _tMove?.Kill();
         _tScale?.Kill();
-        _tMove = transform.DOLocalMove(_restLocalPos, exitDuration).SetEase(Ease.OutSine);
         _tScale = transform.DOScale(_restLocalScale, exitDuration).SetEase(Ease.OutSine)
             .OnComplete(() => _exiting = false);
     }
@@ -1020,9 +1062,11 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     {
         if (!_interactive) return;
         if (_owner == null || _animating) return;
+        if (_dragging) return;
         bool wasHovering = _hovering;
         _dragging = true;
         _hovering = false;
+        _pendingDrag = false;
 
         _restLocalPos = transform.localPosition;
         if (!_hasRestPose || !wasHovering)
@@ -1041,6 +1085,9 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         _lastLiftAmount = 0f;
         _dragStartScreenPos = screenPos;
         _dragTravelSqr = 0f;
+        _reorderUnlocked = false;
+        _dragStartGapPosition = Mathf.Max(0f, _owner.GetWorldHandIndex(this));
+        _lastReorderGapPosition = _dragStartGapPosition;
 
         _owner.NotifyWorldDragBegin(this);
 
@@ -1052,6 +1099,80 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         SetSortingOrder(dragOrder);
     }
 
+    private void BeginPointerPress(Vector2 screenPos)
+    {
+        if (!_interactive) return;
+        if (_owner == null || _animating) return;
+
+        _pointerHeld = true;
+        _pendingDrag = true;
+        _dragStartScreenPos = screenPos;
+        _dragTravelSqr = 0f;
+    }
+
+    private void UpdatePointerDrag(Vector2 screenPos)
+    {
+        if (!_pointerHeld) return;
+
+        if (_pendingDrag)
+        {
+            _dragTravelSqr = Mathf.Max(_dragTravelSqr, (screenPos - _dragStartScreenPos).sqrMagnitude);
+            float startPixels = Mathf.Clamp(clickMaxTravelPixels * 0.35f, 3f, 8f);
+            if (_dragTravelSqr >= startPixels * startPixels)
+                BeginDrag(screenPos);
+        }
+
+        if (_dragging)
+            DragTo(screenPos);
+    }
+
+    private void EndPointerPress(Vector2 screenPos)
+    {
+        if (_dragging)
+            EndDrag(screenPos);
+
+        _pointerHeld = false;
+        _pendingDrag = false;
+    }
+
+    private bool IsNearDiscardZone(Vector2 screenPos)
+    {
+        if (_owner == null)
+            return false;
+
+        bool nearDiscardZone = _owner.IsDiscardPoint(screenPos);
+        if (!nearDiscardZone)
+        {
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                var centerScreen = cam.WorldToScreenPoint(transform.position);
+                if (centerScreen.z > 0f)
+                    nearDiscardZone = _owner.IsDiscardPoint(new Vector2(centerScreen.x, centerScreen.y));
+            }
+        }
+
+        return nearDiscardZone;
+    }
+
+    private bool IsInHandReorderZone(float liftAmount, bool nearDiscardZone, bool upwardDiscardIntent)
+    {
+        if (upwardDiscardIntent)
+            return false;
+
+        if (nearDiscardZone)
+        {
+            float discardLockLift = Mathf.Max(0.05f, reorderDiscardLockLift);
+            if (liftAmount >= discardLockLift)
+                return false;
+        }
+
+        float maxLift = Mathf.Max(Mathf.Max(0.01f, reorderMaxLift), discardMinLift * 0.55f);
+        if (liftAmount > maxLift)
+            return false;
+        return true;
+    }
+
     private void DragTo(Vector2 screenPos)
     {
         if (!_interactive) return;
@@ -1059,24 +1180,39 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         _dragTravelSqr = Mathf.Max(_dragTravelSqr, (screenPos - _dragStartScreenPos).sqrMagnitude);
 
         // Calcula posicao/rotacao no arco + estado de "elevacao"
-        _owner.GetWorldHandDragPose(this, screenPos, _dragOffsetWorld, out var worldPos, out var liftAmount, out var angleZ, out var targetIndex);
+        _owner.GetWorldHandDragPose(this, screenPos, _dragOffsetWorld, out var worldPos, out var liftAmount, out var angleZ, out var targetIndex, out var targetGapPosition);
         transform.position = worldPos;
         _lastLiftAmount = liftAmount;
 
-        bool nearDiscardZone = false;
-        if (_owner != null)
+        bool nearDiscardZone = IsNearDiscardZone(screenPos);
+
+        float lateralDelta = _owner != null
+            ? _owner.GetWorldHandLateralScreenDelta(_dragStartScreenPos, screenPos)
+            : (screenPos.x - _dragStartScreenPos.x);
+        float upwardDelta = screenPos.y - _dragStartScreenPos.y;
+        float upwardCancel = Mathf.Max(8f, reorderUpwardCancelPixels);
+        bool upwardDiscardIntent = upwardDelta > upwardCancel && Mathf.Abs(lateralDelta) < (upwardDelta * 0.9f);
+        float lateralThreshold = Mathf.Max(reorderLateralUnlockPixels, clickMaxTravelPixels * 0.8f);
+        bool inReorderZone = IsInHandReorderZone(liftAmount, nearDiscardZone, upwardDiscardIntent);
+        if (!_reorderUnlocked && inReorderZone && Mathf.Abs(lateralDelta) >= lateralThreshold)
+            _reorderUnlocked = true;
+
+        if (_reorderUnlocked)
         {
-            nearDiscardZone = _owner.IsDiscardPoint(screenPos);
-            if (!nearDiscardZone)
+            if (inReorderZone)
             {
-                var cam = Camera.main;
-                if (cam != null)
-                {
-                    var centerScreen = cam.WorldToScreenPoint(transform.position);
-                    if (centerScreen.z > 0f)
-                        nearDiscardZone = _owner.IsDiscardPoint(new Vector2(centerScreen.x, centerScreen.y));
-                }
+                _lastReorderGapPosition = targetGapPosition;
             }
+            else
+            {
+                targetGapPosition = _lastReorderGapPosition;
+                targetIndex = Mathf.RoundToInt(_lastReorderGapPosition);
+            }
+        }
+        else
+        {
+            targetGapPosition = _dragStartGapPosition;
+            targetIndex = Mathf.RoundToInt(_dragStartGapPosition);
         }
 
         if (nearDiscardZone)
@@ -1096,9 +1232,9 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (nearDiscardZone)
             SetSortingOrder(_owner.GetWorldDragTopSortingOrder());
         else
-            SetSortingOrder(_owner.GetWorldDragSortingOrderForGap(targetIndex));
+            SetSortingOrder(_owner.GetWorldDragSortingOrderForGapPosition(targetGapPosition));
 
-        _owner.NotifyWorldDrag(this);
+        _owner.NotifyWorldDrag(this, targetGapPosition);
     }
 
     private void EndDrag(Vector2 screenPos)
@@ -1106,23 +1242,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (!_interactive) return;
         if (!_dragging) return;
         _dragging = false;
+        bool reorderWasUnlocked = _reorderUnlocked;
         _dragTravelSqr = Mathf.Max(_dragTravelSqr, (screenPos - _dragStartScreenPos).sqrMagnitude);
 
-        bool hitDiscard = false;
-        if (_owner != null)
-        {
-            hitDiscard = _owner.IsDiscardPoint(screenPos);
-            if (!hitDiscard)
-            {
-                var cam = Camera.main;
-                if (cam != null)
-                {
-                    var centerScreen = cam.WorldToScreenPoint(transform.position);
-                    if (centerScreen.z > 0f)
-                        hitDiscard = _owner.IsDiscardPoint(new Vector2(centerScreen.x, centerScreen.y));
-                }
-            }
-        }
+        bool hitDiscard = IsNearDiscardZone(screenPos);
 
         if (_owner != null && hitDiscard)
         {
@@ -1140,6 +1263,33 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             _owner.DiscardWorldCard(this, transform.position);
             return;
         }
+
+        if (_owner != null)
+        {
+            float releaseGapPosition = _dragStartGapPosition;
+            if (reorderWasUnlocked)
+            {
+                // Capture release position precisely when reorder is allowed in hand zone.
+                _owner.GetWorldHandDragPose(this, screenPos, _dragOffsetWorld, out _, out var releaseLift, out _, out _, out var candidateGapPosition);
+                bool releaseNearDiscard = IsNearDiscardZone(screenPos);
+                float releaseLateralDelta = _owner != null
+                    ? _owner.GetWorldHandLateralScreenDelta(_dragStartScreenPos, screenPos)
+                    : (screenPos.x - _dragStartScreenPos.x);
+                float releaseUpwardDelta = screenPos.y - _dragStartScreenPos.y;
+                float releaseUpwardCancel = Mathf.Max(8f, reorderUpwardCancelPixels);
+                bool releaseUpwardDiscardIntent =
+                    releaseUpwardDelta > releaseUpwardCancel &&
+                    Mathf.Abs(releaseLateralDelta) < (releaseUpwardDelta * 0.9f);
+                bool releaseInReorderZone = IsInHandReorderZone(releaseLift, releaseNearDiscard, releaseUpwardDiscardIntent);
+                if (releaseInReorderZone)
+                    releaseGapPosition = candidateGapPosition;
+                else
+                    releaseGapPosition = _lastReorderGapPosition;
+            }
+            _owner.NotifyWorldDrag(this, releaseGapPosition);
+        }
+        _reorderUnlocked = false;
+        _lastReorderGapPosition = 0f;
 
         _tMove?.Kill();
         _tScale?.Kill();
@@ -1181,19 +1331,19 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (_usePointerEvents) return;
         if (TryDiscardOnDoubleClick())
             return;
-        BeginDrag(GetLegacyPointerPos());
+        BeginPointerPress(GetLegacyPointerPos());
     }
 
     private void OnMouseDrag()
     {
         if (_usePointerEvents) return;
-        DragTo(GetLegacyPointerPos());
+        UpdatePointerDrag(GetLegacyPointerPos());
     }
 
     private void OnMouseUp()
     {
         if (_usePointerEvents) return;
-        EndDrag(GetLegacyPointerPos());
+        EndPointerPress(GetLegacyPointerPos());
     }
 
     public void OnPointerEnter(PointerEventData eventData)
@@ -1214,20 +1364,20 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (eventData.button != PointerEventData.InputButton.Left) return;
         if (TryDiscardOnDoubleClick(eventData.clickCount))
             return;
-        BeginDrag(eventData.position);
+        BeginPointerPress(eventData.position);
     }
 
     public void OnDrag(PointerEventData eventData)
     {
         if (!_usePointerEvents) return;
-        DragTo(eventData.position);
+        UpdatePointerDrag(eventData.position);
     }
 
     public void OnPointerUp(PointerEventData eventData)
     {
         if (!_usePointerEvents) return;
         if (eventData.button != PointerEventData.InputButton.Left) return;
-        EndDrag(eventData.position);
+        EndPointerPress(eventData.position);
     }
 
     private Vector2 GetLegacyPointerPos()
@@ -1238,6 +1388,16 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 #else
         return Input.mousePosition;
 #endif
+    }
+
+    private bool IsPrimaryPointerPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var mouse = Mouse.current;
+        if (mouse != null)
+            return mouse.leftButton.isPressed;
+#endif
+        return Input.GetMouseButton(0);
     }
 
     private bool TryDiscardOnDoubleClick(int pointerClickCount = 0)
@@ -1260,6 +1420,9 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         _hovering = false;
         _dragging = false;
+        _pointerHeld = false;
+        _pendingDrag = false;
+        _reorderUnlocked = false;
         _exiting = false;
         _tMove?.Kill();
         _tScale?.Kill();

@@ -53,7 +53,10 @@ public class GameBootstrap : MonoBehaviour
     public float worldDrawToHandTravelDuration = 0.22f;
     public float worldDrawToHandSettleDuration = 0.12f;
     public float worldDrawToHandScale = 1.08f;
+    [Range(0.3f, 1f)] public float worldDrawPostFlipTimeScale = 0.7f;
     public Vector3 worldHandCardScale = Vector3.one;
+    [Header("Hand Reorder FX")]
+    [Range(0.05f, 0.45f)] public float worldDragLayerInset = 0.16f;
 
     public bool useWorldDiscardStack = true;
     public int worldDiscardStackMaxLayers = 18;
@@ -124,6 +127,9 @@ public class GameBootstrap : MonoBehaviour
     [Range(0.02f, 0.3f)] public float sortButtonFadeDuration = 0.08f;
     public float drawClickCooldown = 0.25f;
     public int worldMaxTotalDraw = 10;
+    [Header("Chalk Demarcation")]
+    public bool showChalkDemarcations = true;
+    public ChalkTableDemarcation chalkTableDemarcation;
 
     [Header("Sort Buttons Refs (Optional)")]
     [SerializeField] private RectTransform sortButtonsRootRef;
@@ -158,6 +164,7 @@ public class GameBootstrap : MonoBehaviour
     private bool _drawInProgress;
     private int _drawCount;
     private int _gapIndex = -1;
+    private float _gapPosition = -1f;
     private int _initialDrawPileCount = 1;
     private RectTransform _sortButtonsRoot;
     private RectTransform _sortBySuitButtonRt;
@@ -186,6 +193,14 @@ public class GameBootstrap : MonoBehaviour
         CaptureMainCameraDefaults();
     }
 
+    private void OnValidate()
+    {
+        if (Application.isPlaying)
+            return;
+        ResolveRefs();
+        EnsureChalkDemarcations();
+    }
+
     private void Start()
     {
         ResolveRefs();
@@ -195,7 +210,16 @@ public class GameBootstrap : MonoBehaviour
     private void LateUpdate()
     {
         EnsureSortButtonsLayout();
-        if (!useWorldCards || _dragCard != null) return;
+        if (!useWorldCards) return;
+        if (_dragCard != null)
+        {
+            // Safety: if card left drag state without notifying (missed pointer up),
+            // force cleanup to avoid a card stuck above the hand.
+            if (!_dragCard.IsDragging)
+                NotifyWorldDragEnd(_dragCard, false);
+            else
+                return;
+        }
         if (_shadowRoot != null)
         {
             var p = _shadowRoot.position;
@@ -217,6 +241,8 @@ public class GameBootstrap : MonoBehaviour
         _drawCount = 0;
         _lastDrawAt = -10f;
         _drawInProgress = false;
+        _gapIndex = -1;
+        _gapPosition = -1f;
         ClearPinnedWorldCard(null);
 
         if (drawPile != null) drawPile.gameObject.SetActive(!useWorldCards || !hideUiPiles);
@@ -243,6 +269,7 @@ public class GameBootstrap : MonoBehaviour
         SetupPhysicalLighting();
         EnsureWorldDrawPileVisual();
         DisableWorldDiscardShadowVisual();
+        EnsureChalkDemarcations();
 
         if (useWorldCards) SpawnInitialWorldHand();
         else SpawnInitialUiHand();
@@ -358,6 +385,7 @@ public class GameBootstrap : MonoBehaviour
         if (card == null) return;
         _dragCard = card;
         _gapIndex = Mathf.Max(0, GetWorldHandIndex(card));
+        _gapPosition = _gapIndex;
         if (_pinned != null && _pinned != card) ClearPinnedWorldCard(null);
         ApplyWorld();
     }
@@ -366,7 +394,28 @@ public class GameBootstrap : MonoBehaviour
     {
         if (card == null || card != _dragCard || worldHandRoot == null) return;
         var local = worldHandRoot.InverseTransformPoint(card.transform.position);
-        _gapIndex = ComputeGap(local.x, card);
+        NotifyWorldDrag(card, ComputeGapPosition(local.x, card));
+    }
+
+    public void NotifyWorldDrag(CardWorldView card, float gapPosition)
+    {
+        if (card == null || card != _dragCard) return;
+        int activeCount = GetActiveWorldCardCount(card);
+        float clampedGap = Mathf.Clamp(gapPosition, 0f, activeCount);
+
+        if (_gapIndex < 0)
+            _gapIndex = Mathf.Clamp(Mathf.RoundToInt(clampedGap), 0, activeCount);
+
+        // Step-by-step swapping with hysteresis:
+        // cards only move when crossing to the next slot decisively.
+        const float stepThreshold = 0.53f;
+        while (_gapIndex < activeCount && clampedGap > (_gapIndex + stepThreshold))
+            _gapIndex++;
+        while (_gapIndex > 0 && clampedGap < (_gapIndex - stepThreshold))
+            _gapIndex--;
+
+        // Continuous gap drives preview opening; discrete gap index drives order swap.
+        _gapPosition = clampedGap;
         ApplyWorld();
     }
 
@@ -380,13 +429,17 @@ public class GameBootstrap : MonoBehaviour
         if (from >= 0)
         {
             _worldHand.RemoveAt(from);
-            int to = Mathf.Clamp(_gapIndex, 0, _worldHand.Count);
+            int desiredIndex = _gapPosition >= 0f
+                ? ResolveDropIndexImmediate(_gapPosition, from, _worldHand.Count)
+                : _gapIndex;
+            int to = Mathf.Clamp(desiredIndex, 0, _worldHand.Count);
             orderChanged = to != from;
             _worldHand.Insert(to, card);
             SyncHandFromWorld();
         }
 
         _gapIndex = -1;
+        _gapPosition = -1f;
         ApplyWorld();
 
         if (unlockSortButtonsOnOrderChange && orderChanged)
@@ -487,6 +540,23 @@ public class GameBootstrap : MonoBehaviour
         return ScreenToWorldOnPlane(Camera.main, screenPos, worldPlaneZ);
     }
 
+    public float GetWorldHandLateralScreenDelta(Vector2 startScreenPos, Vector2 currentScreenPos)
+    {
+        Vector2 axis = Vector2.right;
+        var cam = Camera.main;
+        if (cam != null && worldHandRoot != null)
+        {
+            Vector3 p0 = cam.WorldToScreenPoint(worldHandRoot.position);
+            Vector3 p1 = cam.WorldToScreenPoint(worldHandRoot.position + worldHandRoot.right);
+            Vector2 rightOnScreen = new Vector2(p1.x - p0.x, p1.y - p0.y);
+            if (rightOnScreen.sqrMagnitude > 0.0001f)
+                axis = rightOnScreen.normalized;
+        }
+
+        Vector2 delta = currentScreenPos - startScreenPos;
+        return Vector2.Dot(delta, axis);
+    }
+
     public int GetWorldHandIndex(CardWorldView card)
     {
         return card == null ? -1 : _worldHand.IndexOf(card);
@@ -501,18 +571,26 @@ public class GameBootstrap : MonoBehaviour
 
     public int GetWorldDragSortingOrderForGap(int gapIndex)
     {
+        // Center the integer gap inside its interval for stable startup order.
+        return GetWorldDragSortingOrderForGapPosition(gapIndex + 0.5f);
+    }
+
+    public int GetWorldDragSortingOrderForGapPosition(float gapPosition)
+    {
         int b = worldHandLayout != null ? worldHandLayout.baseSortingOrder : 10;
         int step = worldHandLayout != null ? Mathf.Max(2, worldHandLayout.sortingStep) : 10;
-        int n = Mathf.Max(1, _worldHand.Count);
-        int safeGap = Mathf.Clamp(gapIndex, 0, n - 1);
-        int midOffset = Mathf.Max(1, step / 2);
+        int activeCount = GetActiveWorldCardCount(_dragCard);
 
-        if (safeGap <= 0)
-            return b - midOffset;
-        if (safeGap >= n - 1)
-            return b + ((n - 1) * step) + midOffset;
+        if (activeCount <= 0)
+            return b;
 
-        return b + (safeGap * step) - midOffset;
+        float clampedGap = Mathf.Clamp(gapPosition, 0f, activeCount);
+        float inset01 = Mathf.Clamp(worldDragLayerInset, 0.05f, 0.45f);
+        // Keep dragged card behind the card in front of the gap while dragging inside hand.
+        float backT = Mathf.Lerp(0.55f, 0.9f, 1f - inset01);
+        int backOffset = Mathf.Clamp(Mathf.RoundToInt(step * backT), 1, Mathf.Max(1, step - 1));
+        float order = b + (clampedGap * step) - backOffset;
+        return Mathf.RoundToInt(order);
     }
 
     public int GetWorldDragTopSortingOrder()
@@ -569,7 +647,8 @@ public class GameBootstrap : MonoBehaviour
         out Vector3 worldPos,
         out float liftAmount,
         out float angleZ,
-        out int targetIndex)
+        out int targetIndex,
+        out float targetGapPosition)
     {
         Vector3 baseWorld = GetWorldPointFromScreen(screenPos) + dragOffsetWorld;
         if (worldHandRoot == null)
@@ -578,15 +657,18 @@ public class GameBootstrap : MonoBehaviour
             liftAmount = 0f;
             angleZ = 0f;
             targetIndex = GetWorldHandIndex(card);
+            targetGapPosition = Mathf.Max(0f, targetIndex);
             return;
         }
 
         Vector3 local = worldHandRoot.InverseTransformPoint(baseWorld);
         float arcY = worldHandLayout != null ? worldHandLayout.GetArcYForLocalX(local.x) : local.y;
         liftAmount = Mathf.Max(0f, local.y - arcY);
-        targetIndex = ComputeGap(local.x, card);
+        int activeCount = GetActiveWorldCardCount(card);
+        targetGapPosition = Mathf.Clamp(ComputeGapPosition(local.x, card), 0f, activeCount);
+        targetIndex = GapPositionToIndex(targetGapPosition);
         angleZ = AngleForX(local.x);
-        float z = -0.01f * Mathf.Clamp(targetIndex, 0, Mathf.Max(0, _worldHand.Count - 1));
+        float z = -0.01f * targetGapPosition;
         worldPos = worldHandRoot.TransformPoint(new Vector3(local.x, Mathf.Max(local.y, arcY), z));
     }
 
@@ -718,9 +800,10 @@ public class GameBootstrap : MonoBehaviour
 
         float riseDuration = Mathf.Max(0.05f, worldDrawToHandRiseDuration);
         float flipHalfDuration = Mathf.Max(0.05f, worldDrawToHandFlipHalf);
-        float revealHold = Mathf.Max(0f, worldDrawToHandRevealHold);
-        float travelDuration = Mathf.Max(0.05f, worldDrawToHandTravelDuration);
-        float settleDuration = Mathf.Max(0f, worldDrawToHandSettleDuration);
+        float postFlipScale = Mathf.Clamp(worldDrawPostFlipTimeScale, 0.3f, 1f);
+        float revealHold = Mathf.Max(0f, worldDrawToHandRevealHold * postFlipScale);
+        float travelDuration = Mathf.Max(0.05f, worldDrawToHandTravelDuration * postFlipScale);
+        float settleDuration = Mathf.Max(0f, worldDrawToHandSettleDuration * postFlipScale);
         float revealScaleFactor = Mathf.Max(1f, worldDrawToHandScale);
         Vector3 revealScale = baseScale * revealScaleFactor;
 
@@ -748,7 +831,8 @@ public class GameBootstrap : MonoBehaviour
             seq.Append(view.transform.DOMove(targetWorld, settleDuration * 0.55f).SetEase(Ease.OutSine));
         }
 
-        float rotateIntoHandDuration = Mathf.Max(0.08f, settleDuration > 0f ? settleDuration * 0.8f : 0.12f);
+        float rotateIntoHandBase = worldDrawToHandSettleDuration > 0f ? worldDrawToHandSettleDuration * 0.8f : 0.12f;
+        float rotateIntoHandDuration = Mathf.Max(0.06f, rotateIntoHandBase * postFlipScale);
         seq.Append(view.transform.DORotateQuaternion(targetRot, rotateIntoHandDuration).SetEase(Ease.OutSine));
 
         bool completed = false;
@@ -842,26 +926,96 @@ public class GameBootstrap : MonoBehaviour
         if (worldHandLayout == null) return;
         _worldHand.RemoveAll(v => v == null);
         if (_worldHand.Count == 0) return;
-        int gap = _dragCard != null ? Mathf.Clamp(_gapIndex, 0, _worldHand.Count - 1) : -1;
-        worldHandLayout.Apply(_worldHand, instant, gap);
+        float gap = _dragCard != null ? Mathf.Clamp(_gapPosition, 0f, GetActiveWorldCardCount(_dragCard)) : -1f;
+        worldHandLayout.Apply(_worldHand, instant, gap, _dragCard);
     }
 
-    private int ComputeGap(float localX, CardWorldView dragging)
+    private int GapPositionToIndex(float gapPosition)
     {
-        int idx = 0;
+        if (_worldHand.Count == 0) return 0;
+
+        int activeCount = GetActiveWorldCardCount(_dragCard);
+        if (activeCount == 0) return 0;
+        int idx = Mathf.RoundToInt(gapPosition);
+        return Mathf.Clamp(idx, 0, activeCount);
+    }
+
+    private int GetActiveWorldCardCount(CardWorldView excluded = null)
+    {
+        int count = 0;
+        for (int i = 0; i < _worldHand.Count; i++)
+        {
+            var c = _worldHand[i];
+            if (c == null || c == excluded) continue;
+            count++;
+        }
+        return count;
+    }
+
+    private float ComputeGapPosition(float localX, CardWorldView dragging)
+    {
+        if (_worldHand.Count == 0) return 0f;
+
+        int activeCount = 0;
         for (int i = 0; i < _worldHand.Count; i++)
         {
             var c = _worldHand[i];
             if (c == null || c == dragging) continue;
-            if (localX > c.transform.localPosition.x) idx++;
+            activeCount++;
         }
-        return Mathf.Clamp(idx, 0, Mathf.Max(0, _worldHand.Count - 1));
+        if (activeCount == 0) return 0f;
+
+        if (worldHandLayout == null)
+        {
+            int fallbackIdx = 0;
+            for (int i = 0; i < _worldHand.Count; i++)
+            {
+                var c = _worldHand[i];
+                if (c == null || c == dragging) continue;
+                if (localX > c.transform.localPosition.x)
+                    fallbackIdx++;
+            }
+            return Mathf.Clamp(fallbackIdx, 0, activeCount);
+        }
+
+        float step = worldHandLayout.GetBaseStep(_worldHand, dragging);
+        step = Mathf.Max(0.0001f, step);
+        float total = step * Mathf.Max(0, activeCount - 1);
+        float startX = -total * 0.5f;
+
+        float leftBoundary = startX - (step * 0.5f);
+        if (localX <= leftBoundary)
+            return 0f;
+
+        float rightBoundary = startX + total + (step * 0.5f);
+        if (localX >= rightBoundary)
+            return activeCount;
+
+        float normalized = (localX - leftBoundary) / step;
+        return Mathf.Clamp(normalized, 0f, activeCount);
+    }
+
+    private int ResolveDropIndexImmediate(float gapPosition, int fromIndex, int maxIndex)
+    {
+        float clampedGap = Mathf.Clamp(gapPosition, 0f, maxIndex);
+        float swapStart = worldHandLayout != null
+            ? Mathf.Clamp(worldHandLayout.dragMoveStartDelta, 0.08f, 0.4f)
+            : 0.12f;
+
+        float delta = clampedGap - fromIndex;
+        int stepDelta = 0;
+        if (delta > swapStart)
+            stepDelta = Mathf.CeilToInt(delta);
+        else if (delta < -swapStart)
+            stepDelta = Mathf.FloorToInt(delta);
+
+        return Mathf.Clamp(fromIndex + stepDelta, 0, maxIndex);
     }
 
     private float AngleForX(float x)
     {
         if (worldHandLayout == null) return 0f;
-        float step = worldHandLayout.spacing * (1f - worldHandLayout.overlap);
+        float step = worldHandLayout.GetBaseStep(_worldHand, _dragCard);
         float half = step * Mathf.Max(1, _worldHand.Count - 1) * 0.5f;
         float t = half > 0.0001f ? Mathf.Clamp(x / half, -1f, 1f) : 0f;
         return -t * (worldHandLayout.maxAngle * 0.5f);
@@ -1346,6 +1500,26 @@ public class GameBootstrap : MonoBehaviour
             var go = GameObject.Find("WorldDiscardRoot");
             if (go != null) worldDiscardRoot = go.transform;
         }
+    }
+
+    private void EnsureChalkDemarcations()
+    {
+        if (!showChalkDemarcations)
+        {
+            if (chalkTableDemarcation != null)
+                chalkTableDemarcation.enabled = false;
+            return;
+        }
+
+        if (chalkTableDemarcation == null)
+            chalkTableDemarcation = GetComponent<ChalkTableDemarcation>();
+
+        if (chalkTableDemarcation == null)
+            chalkTableDemarcation = gameObject.AddComponent<ChalkTableDemarcation>();
+
+        chalkTableDemarcation.enabled = true;
+        chalkTableDemarcation.Bind(this);
+        chalkTableDemarcation.RebuildNow();
     }
 
     private void EnsureSortButtonsLayout()
