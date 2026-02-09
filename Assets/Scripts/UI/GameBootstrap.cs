@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using DG.Tweening;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.Events;
@@ -69,15 +70,33 @@ public class GameBootstrap : MonoBehaviour
     public float worldDiscardThrowDownDuration = 0.12f;
     public float worldDiscardScaleBlendDuration = 0.24f;
 
+    [Header("Physical Lighting")]
+    [Tooltip("Sistema de sombras 3D fisicas (desligado por padrao no modo 2D fake).")]
     public bool usePhysicalLighting = false;
+    [Tooltip("Ativa automaticamente o modo fisico em runtime.")]
+    public bool autoEnablePhysicalLightingInWorldMode = false;
     public Color physicalTableTint = Color.white;
     public float physicalTableOffsetZ = 1.2f;
-    public Vector3 physicalLightEuler = new Vector3(75f, 15f, 0f);
+    public Vector3 physicalLightEuler = new Vector3(20f, 180f, 0f);
     public float physicalLightIntensity = 1.2f;
     public LightShadows physicalLightShadows = LightShadows.Soft;
     public float physicalShadowStrength = 0.8f;
     public float physicalShadowBias = 0.02f;
     public float physicalShadowNormalBias = 0.2f;
+    [Header("Isometric Camera")]
+    public bool autoConfigureIsometricCamera = false;
+    public bool syncWorldHandTiltWithCamera = false;
+    [Range(10f, 60f)] public float isometricCameraAngleX = 30f;
+    [Range(-45f, 45f)] public float isometricCameraAngleY = 0f;
+    [Range(4f, 30f)] public float isometricCameraDistance = 10.8f;
+    [Range(20f, 85f)] public float isometricCameraFov = 46f;
+    public Vector3 isometricCameraLookAtOffset = new Vector3(0f, -0.15f, 0f);
+    [Header("2D Fake 3D")]
+    public bool use2DFake3DLook = true;
+    public bool autoConfigure2DCamera = true;
+    [Range(10f, 45f)] public float fake3DTiltX = 30f;
+    [Range(-2f, 2f)] public float fake3DCameraYOffset = -0.12f;
+    [Range(3.5f, 8f)] public float fake3DCameraOrthoSize = 5.5f;
 
     public RectTransform drawPile;
     public RectTransform discardPile;
@@ -126,7 +145,15 @@ public class GameBootstrap : MonoBehaviour
     private SpriteRenderer _worldDrawShadow;
     private SpriteRenderer _worldDiscardShadow;
     private Light _physicalLight;
+    private TableLighting _tableLighting;
+    private IsometricCameraSetup _cameraSetup;
     private Material _physicalCardMaterial;
+    private bool _cameraDefaultsCaptured;
+    private Vector3 _cameraDefaultPosition;
+    private Quaternion _cameraDefaultRotation;
+    private bool _cameraDefaultOrthographic;
+    private float _cameraDefaultOrthographicSize;
+    private float _cameraDefaultFieldOfView;
     private float _lastDrawAt = -10f;
     private bool _drawInProgress;
     private int _drawCount;
@@ -153,6 +180,11 @@ public class GameBootstrap : MonoBehaviour
     public bool IsWorldDragActive => _dragCard != null;
     public float WorldCardTiltX => worldHandLayout != null ? worldHandLayout.tiltX : 0f;
     public float WorldShadowPlaneZ => worldPlaneZ + worldShadowPlaneOffset;
+
+    private void Awake()
+    {
+        CaptureMainCameraDefaults();
+    }
 
     private void Start()
     {
@@ -204,6 +236,10 @@ public class GameBootstrap : MonoBehaviour
         EnsureSortButtonsWiring();
         SetSortButtonLockState(SortButtonLockState.None);
 
+        CaptureMainCameraDefaults();
+        Apply2DFake3DLook();
+        if (useWorldCards && autoEnablePhysicalLightingInWorldMode && !use2DFake3DLook)
+            usePhysicalLighting = true;
         SetupPhysicalLighting();
         EnsureWorldDrawPileVisual();
         DisableWorldDiscardShadowVisual();
@@ -323,6 +359,7 @@ public class GameBootstrap : MonoBehaviour
         _dragCard = card;
         _gapIndex = Mathf.Max(0, GetWorldHandIndex(card));
         if (_pinned != null && _pinned != card) ClearPinnedWorldCard(null);
+        ApplyWorld();
     }
 
     public void NotifyWorldDrag(CardWorldView card)
@@ -458,7 +495,24 @@ public class GameBootstrap : MonoBehaviour
     public int GetWorldSortingOrderForIndex(int index)
     {
         int b = worldHandLayout != null ? worldHandLayout.baseSortingOrder : 10;
-        return b + Mathf.Max(0, index);
+        int step = worldHandLayout != null ? Mathf.Max(2, worldHandLayout.sortingStep) : 10;
+        return b + (Mathf.Max(0, index) * step);
+    }
+
+    public int GetWorldDragSortingOrderForGap(int gapIndex)
+    {
+        int b = worldHandLayout != null ? worldHandLayout.baseSortingOrder : 10;
+        int step = worldHandLayout != null ? Mathf.Max(2, worldHandLayout.sortingStep) : 10;
+        int n = Mathf.Max(1, _worldHand.Count);
+        int safeGap = Mathf.Clamp(gapIndex, 0, n - 1);
+        int midOffset = Mathf.Max(1, step / 2);
+
+        if (safeGap <= 0)
+            return b - midOffset;
+        if (safeGap >= n - 1)
+            return b + ((n - 1) * step) + midOffset;
+
+        return b + (safeGap * step) - midOffset;
     }
 
     public int GetWorldDragTopSortingOrder()
@@ -650,6 +704,7 @@ public class GameBootstrap : MonoBehaviour
 
         view.SetInteractive(false);
         view.SetAnimating(true);
+        view.SetForceShadowVisible(true);
         view.SetFaceUp(false);
 
         int safeCount = Mathf.Max(1, _worldHand.Count);
@@ -705,6 +760,7 @@ public class GameBootstrap : MonoBehaviour
             view.transform.localRotation = targetRot;
             view.transform.localScale = baseScale;
             view.SetFaceUp(showFaces);
+            view.SetForceShadowVisible(false);
             view.SetInteractive(true);
             view.SetAnimating(false);
             ApplyWorld();
@@ -735,7 +791,11 @@ public class GameBootstrap : MonoBehaviour
         if (usePhysical)
             view.ConfigurePhysicalRendering(true, _physicalCardMaterial);
         else
+        {
             view.ConfigurePhysicalRendering(false, null);
+            if (use2DFake3DLook)
+                view.Apply2DShadowPreset();
+        }
     }
 
     private void OnUiDiscard(Card card)
@@ -807,44 +867,255 @@ public class GameBootstrap : MonoBehaviour
         return -t * (worldHandLayout.maxAngle * 0.5f);
     }
 
+    private void Apply2DFake3DLook()
+    {
+        if (!useWorldCards || !use2DFake3DLook)
+            return;
+
+        // Modo fake 3D: mantem layout/camera originais e so garante render 2D.
+        usePhysicalLighting = false;
+        autoEnablePhysicalLightingInWorldMode = false;
+    }
+
+    private void CaptureMainCameraDefaults()
+    {
+        if (_cameraDefaultsCaptured)
+            return;
+
+        var mainCam = Camera.main;
+        if (mainCam == null)
+            return;
+
+        _cameraDefaultsCaptured = true;
+        _cameraDefaultPosition = mainCam.transform.position;
+        _cameraDefaultRotation = mainCam.transform.rotation;
+        _cameraDefaultOrthographic = mainCam.orthographic;
+        _cameraDefaultOrthographicSize = mainCam.orthographicSize;
+        _cameraDefaultFieldOfView = mainCam.fieldOfView;
+    }
+
+    private void RestoreMainCameraDefaults()
+    {
+        if (!autoConfigure2DCamera)
+            return;
+
+        var mainCam = Camera.main;
+        if (mainCam == null)
+            return;
+
+        if (!_cameraDefaultsCaptured)
+            CaptureMainCameraDefaults();
+        if (!_cameraDefaultsCaptured)
+            return;
+
+        mainCam.transform.position = _cameraDefaultPosition;
+        mainCam.transform.rotation = _cameraDefaultRotation;
+        mainCam.orthographic = _cameraDefaultOrthographic;
+        mainCam.orthographicSize = _cameraDefaultOrthographicSize;
+        mainCam.fieldOfView = _cameraDefaultFieldOfView;
+    }
+
     private void SetupPhysicalLighting()
     {
         if (!useWorldCards) return;
         if (!usePhysicalLighting)
         {
             if (_physicalLight != null) _physicalLight.enabled = false;
+            if (_tableLighting == null)
+                _tableLighting = FindFirstObjectByType<TableLighting>(FindObjectsInactive.Include);
+            if (_tableLighting != null)
+            {
+                _tableLighting.SetShadowsEnabled(false);
+                _tableLighting.SetTableVisible(false);
+            }
+            if (_cameraSetup == null && Camera.main != null)
+                _cameraSetup = Camera.main.GetComponent<IsometricCameraSetup>();
+            if (_cameraSetup != null)
+                _cameraSetup.enabled = false;
+            RestoreMainCameraDefaults();
+            ApplyPhysicalRenderingToCards(false);
             return;
         }
 
+        EnsureShadowQualityForPhysicalLighting();
+
+        // Setup material for physical cards
         if (_physicalCardMaterial == null)
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            bool usingSrp = GraphicsSettings.currentRenderPipeline != null;
+            Shader shader = usingSrp
+                ? Shader.Find("Universal Render Pipeline/Lit")
+                : Shader.Find("Standard");
             if (shader == null) shader = Shader.Find("Standard");
             if (shader != null) _physicalCardMaterial = new Material(shader);
         }
+        ConfigurePhysicalCardMaterial(_physicalCardMaterial);
 
-        if (_physicalLight == null)
+        // Setup TableLighting component
+        if (_tableLighting == null)
         {
-            var lightObj = GameObject.Find("WorldMainLight");
-            if (lightObj == null) lightObj = GameObject.Find("CardPhysicalLight");
-            if (lightObj == null)
+            _tableLighting = FindFirstObjectByType<TableLighting>(FindObjectsInactive.Include);
+            if (_tableLighting == null)
             {
-                lightObj = new GameObject("CardPhysicalLight");
-                lightObj.transform.SetParent(transform, false);
+                var lightingGO = new GameObject("TableLighting");
+                _tableLighting = lightingGO.AddComponent<TableLighting>();
             }
-
-            _physicalLight = lightObj.GetComponent<Light>();
-            if (_physicalLight == null) _physicalLight = lightObj.AddComponent<Light>();
+        }
+        if (_tableLighting != null)
+        {
+            _tableLighting.transform.position = Vector3.zero;
+            _tableLighting.transform.rotation = Quaternion.identity;
         }
 
-        _physicalLight.type = LightType.Directional;
-        _physicalLight.intensity = physicalLightIntensity;
-        _physicalLight.shadows = physicalLightShadows;
-        _physicalLight.shadowStrength = physicalShadowStrength;
-        _physicalLight.shadowBias = physicalShadowBias;
-        _physicalLight.shadowNormalBias = physicalShadowNormalBias;
-        _physicalLight.transform.rotation = Quaternion.Euler(physicalLightEuler);
-        _physicalLight.enabled = true;
+        // Get light from TableLighting
+        if (_tableLighting != null && _tableLighting.DirectionalLight != null)
+        {
+            _physicalLight = _tableLighting.DirectionalLight;
+        }
+
+        // Update lighting configuration
+        if (_tableLighting != null)
+        {
+            if (physicalTableTint.r >= 0.95f && physicalTableTint.g >= 0.95f && physicalTableTint.b >= 0.95f)
+                physicalTableTint = new Color(0.16f, 0.46f, 0.28f, 1f);
+            if (Mathf.Abs(physicalLightEuler.x - 75f) < 0.01f && Mathf.Abs(physicalLightEuler.y - 15f) < 0.01f)
+            {
+                physicalLightEuler = new Vector3(20f, 180f, 0f);
+                physicalShadowStrength = Mathf.Min(physicalShadowStrength, 0.62f);
+            }
+
+            _tableLighting.UpdateLightConfiguration(
+                physicalLightEuler,
+                physicalLightIntensity,
+                physicalLightShadows,
+                physicalShadowStrength,
+                physicalShadowBias,
+                physicalShadowNormalBias,
+                Color.white
+            );
+            _tableLighting.SetTableOffsetZ(physicalTableOffsetZ);
+            _tableLighting.UpdateTableColor(physicalTableTint);
+            _tableLighting.SetTableVisible(true);
+            _tableLighting.SetShadowsEnabled(true);
+        }
+
+        // Setup isometric camera
+        if (_cameraSetup == null)
+        {
+            var mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                _cameraSetup = mainCam.GetComponent<IsometricCameraSetup>();
+                if (_cameraSetup == null)
+                {
+                    _cameraSetup = mainCam.gameObject.AddComponent<IsometricCameraSetup>();
+                }
+            }
+        }
+
+        if (_cameraSetup != null && autoConfigureIsometricCamera)
+        {
+            _cameraSetup.enabled = true;
+            Vector3 lookAtPoint = ComputeIsometricLookAtPoint();
+            _cameraSetup.Configure(
+                isometricCameraAngleX,
+                isometricCameraAngleY,
+                isometricCameraDistance,
+                isometricCameraFov,
+                lookAtPoint
+            );
+        }
+        if (syncWorldHandTiltWithCamera && worldHandLayout != null)
+            worldHandLayout.tiltX = isometricCameraAngleX;
+
+        // Configure all existing cards to use physical rendering
+        ApplyPhysicalRenderingToCards(true);
+    }
+
+    private void ApplyPhysicalRenderingToCards(bool enabled)
+    {
+        foreach (var card in _worldHand)
+        {
+            if (card != null)
+            {
+                card.ConfigurePhysicalRendering(enabled, enabled ? _physicalCardMaterial : null);
+                if (!enabled && use2DFake3DLook)
+                    card.Apply2DShadowPreset();
+            }
+        }
+    }
+
+    private static void EnsureShadowQualityForPhysicalLighting()
+    {
+        QualitySettings.shadows = ShadowQuality.All;
+        if (QualitySettings.shadowResolution < ShadowResolution.Medium)
+            QualitySettings.shadowResolution = ShadowResolution.Medium;
+        QualitySettings.shadowProjection = ShadowProjection.StableFit;
+        if (QualitySettings.shadowCascades < 2)
+            QualitySettings.shadowCascades = 2;
+        QualitySettings.shadowDistance = Mathf.Max(QualitySettings.shadowDistance, 45f);
+        QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, 2);
+    }
+
+    private Vector3 ComputeIsometricLookAtPoint()
+    {
+        Vector3 sum = Vector3.zero;
+        int count = 0;
+
+        if (worldHandRoot != null)
+        {
+            sum += worldHandRoot.position;
+            count++;
+        }
+        if (worldDrawRoot != null)
+        {
+            sum += worldDrawRoot.position;
+            count++;
+        }
+        if (worldDiscardRoot != null)
+        {
+            sum += worldDiscardRoot.position;
+            count++;
+        }
+
+        Vector3 center = count > 0 ? (sum / count) : Vector3.zero;
+        center.z = worldPlaneZ;
+        return center + isometricCameraLookAtOffset;
+    }
+
+    private void ConfigurePhysicalCardMaterial(Material material)
+    {
+        if (material == null || material.shader == null)
+            return;
+
+        if (material.shader.name == "Standard")
+        {
+            material.SetFloat("_Mode", 1f); // Cutout
+            material.SetOverrideTag("RenderType", "TransparentCutout");
+            material.SetInt("_SrcBlend", (int)BlendMode.One);
+            material.SetInt("_DstBlend", (int)BlendMode.Zero);
+            material.SetInt("_ZWrite", 1);
+            material.EnableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHABLEND_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.renderQueue = (int)RenderQueue.AlphaTest;
+            if (material.HasProperty("_Cutoff"))
+                material.SetFloat("_Cutoff", Mathf.Max(0.2f, material.GetFloat("_Cutoff")));
+            if (material.HasProperty("_Glossiness"))
+                material.SetFloat("_Glossiness", 0.08f);
+            if (material.HasProperty("_Metallic"))
+                material.SetFloat("_Metallic", 0f);
+            return;
+        }
+
+        if (material.HasProperty("_Surface"))
+            material.SetFloat("_Surface", 0f);
+        if (material.HasProperty("_AlphaClip"))
+            material.SetFloat("_AlphaClip", 1f);
+        if (material.HasProperty("_Cutoff"))
+            material.SetFloat("_Cutoff", 0.2f);
+        if (material.HasProperty("_Smoothness"))
+            material.SetFloat("_Smoothness", 0.08f);
     }
 
     private void EnsureWorldDrawPileVisual()
@@ -949,7 +1220,7 @@ public class GameBootstrap : MonoBehaviour
         }
         if (_worldDrawShadow != null)
         {
-            bool showShadow = showWorldDrawPile && _back != null && deckCount > 0;
+            bool showShadow = !usePhysicalLighting && showWorldDrawPile && _back != null && deckCount > 0;
             _worldDrawShadow.gameObject.SetActive(showShadow);
             if (showShadow)
             {

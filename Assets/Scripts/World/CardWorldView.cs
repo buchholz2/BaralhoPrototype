@@ -30,6 +30,7 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [SerializeField, Range(0f, 0.5f)] private float shadowTiltSquash = 0.18f;
     [SerializeField, Range(0f, 0.2f)] private float shadowTiltOffset = 0.01f;
     [SerializeField] private bool shadowEllipseOnTable = true;
+    [SerializeField, Range(0.45f, 1f)] private float shadowEllipseWidth = 0.8f;
     [SerializeField, Range(0.4f, 1f)] private float shadowEllipseHeight = 0.72f;
     [Header("Shadow Projection")]
     [SerializeField] private Vector2 shadowLightDirection = new Vector2(0.24f, -1f);
@@ -39,6 +40,12 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [SerializeField, Range(0f, 1f)] private float shadowLiftScaleBoost = 0.16f;
     [SerializeField, Range(0f, 0.5f)] private float shadowLiftSquashBoost = 0.08f;
     [SerializeField, Range(0f, 30f)] private float shadowLiftSmoothing = 12f;
+    [SerializeField, Range(0f, 1f)] private float shadowRotationFollow = 0.42f;
+    [SerializeField, Range(0f, 0.08f)] private float shadowRotationSideShift = 0.014f;
+    [SerializeField, Range(0.2f, 1f)] private float shadowInnerAlpha = 0.62f;
+    [FormerlySerializedAs("shadowOnlyOutsideHand")]
+    [FormerlySerializedAs("shadowOnlyInHand")]
+    [SerializeField] private bool shadowOnlyWhileDragging = true;
 
     [Header("Physical Lighting")]
     [SerializeField] private bool usePhysicalCard = false;
@@ -46,6 +53,8 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     [SerializeField] private bool physicalCastShadows = true;
     [SerializeField] private bool physicalReceiveShadows = false;
     [SerializeField] private bool physicalUseSpriteMesh = true;
+    [SerializeField] private bool physicalUse3DMesh = false;
+    [SerializeField, Range(0.001f, 0.02f)] private float physical3DThickness = 0.002f;
     [SerializeField, Range(0.02f, 0.2f)] private float physicalShadowCorner = 0.08f;
     [SerializeField, Range(2, 10)] private int physicalShadowSegments = 6;
     [SerializeField] private bool keepSoftShadowWhenPhysical = false;
@@ -107,11 +116,13 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     private int _lastShadowOrder = int.MinValue;
     private bool _shadowDetached;
     private float _shadowLiftSmoothed;
+    private bool _forceShadowVisible;
     private static readonly Dictionary<int, Sprite> s_softShadowCache = new();
     private static readonly Dictionary<Sprite, Mesh> s_spriteMeshCache = new();
     private Material _physicalMaterial;
     private MaterialPropertyBlock _mpb;
     private Transform _physicalRoot;
+    private bool _shadowEnabledBeforePhysical = true;
     
     public Card CardData => _card;
     public bool IsLayoutLocked => _hovering || _dragging || _animating || _pinnedHighlight;
@@ -246,6 +257,11 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
     private void LateUpdate()
     {
         if (!enableShadow || _shadowRenderer == null || spriteRenderer == null) return;
+        bool showShadow = ShouldShowShadow();
+        if (_shadowRenderer.gameObject.activeSelf != showShadow)
+            _shadowRenderer.gameObject.SetActive(showShadow);
+        if (!showShadow) return;
+
         int desiredOrder = spriteRenderer.sortingOrder - shadowOrderOffset;
         if (_lastShadowOrder != desiredOrder)
         {
@@ -286,15 +302,20 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             var lightDir = shadowLightDirection.sqrMagnitude > 0.0001f
                 ? shadowLightDirection.normalized
                 : new Vector2(0.24f, -1f);
+            float cardZ = Mathf.DeltaAngle(0f, transform.eulerAngles.z);
+            float cardZRad = cardZ * Mathf.Deg2Rad;
             var liftOffset = new Vector3(lightDir.x, lightDir.y, 0f) * (shadowLiftProjection * liftT);
-            var offset = shadowOffset + liftOffset + new Vector3(0f, -shadowTiltOffset * t, 0f);
+            float sideShift = Mathf.Sin(cardZRad) * shadowRotationSideShift;
+            var rotationShift = new Vector3(sideShift, -Mathf.Abs(sideShift) * 0.2f, 0f);
+            var offset = shadowOffset + liftOffset + new Vector3(0f, -shadowTiltOffset * t, 0f) + rotationShift;
             var pos = transform.position + offset;
             if (_owner != null)
                 pos.z = _owner.WorldShadowPlaneZ + shadowPlaneOffsetZ;
             else
                 pos.z = transform.position.z + shadowPlaneOffsetZ;
             _shadowRenderer.transform.position = pos;
-            _shadowRenderer.transform.rotation = Quaternion.identity;
+            float shadowZ = cardZ * Mathf.Clamp01(shadowRotationFollow);
+            _shadowRenderer.transform.rotation = Quaternion.Euler(0f, 0f, shadowZ);
             var scale = transform.lossyScale * shadowScale;
             float tiltSquash = Mathf.Lerp(1f, 1f - shadowTiltSquash, t);
             float spread = 1f + (shadowLiftScaleBoost * liftT);
@@ -313,6 +334,22 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             t.localScale = Vector3.one * shadowScale;
             _shadowRenderer.color = shadowColor;
         }
+    }
+
+    private bool ShouldShowShadow()
+    {
+        if (!enableShadow)
+            return false;
+
+        if (!shadowOnlyWhileDragging)
+            return true;
+
+        return _dragging || _forceShadowVisible;
+    }
+
+    public void SetForceShadowVisible(bool value)
+    {
+        _forceShadowVisible = value;
     }
 
     private float GetProjectedShadowLift()
@@ -386,23 +423,54 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         if (usePhysicalCard)
         {
+            physicalUse3DMesh = true;
             EnsurePhysicalComponents();
+            if (_physicalMaterial == null)
+            {
+                usePhysicalCard = false;
+                if (meshRenderer != null)
+                    meshRenderer.enabled = false;
+                if (spriteRenderer != null)
+                    spriteRenderer.enabled = true;
+                enableShadow = true;
+                EnsureShadow();
+                RefreshSprite();
+                return;
+            }
+            _shadowEnabledBeforePhysical = enableShadow;
+
+            bool showMesh = !physicalShadowOnly;
             if (meshRenderer != null)
             {
                 meshRenderer.sharedMaterial = _physicalMaterial;
                 meshRenderer.shadowCastingMode = physicalCastShadows
-                    ? (physicalShadowOnly ? ShadowCastingMode.ShadowsOnly : ShadowCastingMode.On)
+                    ? (showMesh ? ShadowCastingMode.On : ShadowCastingMode.ShadowsOnly)
                     : ShadowCastingMode.Off;
                 meshRenderer.receiveShadows = physicalReceiveShadows;
                 meshRenderer.sortingOrder = GetSortingOrder();
+                meshRenderer.enabled = showMesh || physicalCastShadows;
             }
+
             if (spriteRenderer != null)
-                spriteRenderer.enabled = physicalShadowOnly;
+                spriteRenderer.enabled = !showMesh;
+
             if (keepSoftShadowWhenPhysical)
             {
-                shadowColor = new Color(shadowColor.r, shadowColor.g, shadowColor.b, physicalFallbackShadowAlpha);
+                enableShadow = true;
+                EnsureShadow();
+                if (_shadowRenderer != null)
+                {
+                    var fallback = shadowColor;
+                    fallback.a = Mathf.Clamp01(physicalFallbackShadowAlpha);
+                    _shadowRenderer.color = fallback;
+                }
             }
-            SetSoftShadowEnabled(keepSoftShadowWhenPhysical);
+            else
+            {
+                enableShadow = false;
+                SetSoftShadowEnabled(false);
+            }
+
             RefreshSprite();
         }
         else
@@ -411,7 +479,11 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
                 meshRenderer.enabled = false;
             if (spriteRenderer != null)
                 spriteRenderer.enabled = true;
-            enableShadow = true;
+            enableShadow = _shadowEnabledBeforePhysical;
+            if (enableShadow)
+                EnsureShadow();
+            else if (_shadowRenderer != null)
+                _shadowRenderer.gameObject.SetActive(false);
             RefreshSprite();
         }
     }
@@ -453,7 +525,9 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         if (!s_spriteMeshCache.TryGetValue(sprite, out var mesh) || mesh == null)
         {
-            if (physicalUseSpriteMesh)
+            if (physicalUse3DMesh)
+                mesh = Build3DCardMesh(sprite, physical3DThickness);
+            else if (physicalUseSpriteMesh)
                 mesh = BuildMeshFromSprite(sprite);
             else
                 mesh = BuildRoundedRectMesh(sprite.bounds.size, physicalShadowCorner, physicalShadowSegments);
@@ -465,6 +539,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         if (_mpb == null)
             _mpb = new MaterialPropertyBlock();
         _mpb.SetTexture("_MainTex", sprite.texture);
+        _mpb.SetTexture("_BaseMap", sprite.texture);
+        _mpb.SetColor("_Color", Color.white);
+        _mpb.SetColor("_BaseColor", Color.white);
+        _mpb.SetFloat("_Cutoff", 0.2f);
         if (meshRenderer != null)
             meshRenderer.SetPropertyBlock(_mpb);
     }
@@ -546,6 +624,73 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         return mesh;
     }
 
+    private Mesh Build3DCardMesh(Sprite sprite, float thickness)
+    {
+        Vector2 size = sprite.bounds.size;
+        float halfW = size.x * 0.5f;
+        float halfH = size.y * 0.5f;
+        float halfT = thickness * 0.5f;
+
+        Rect texRect = sprite.textureRect;
+        float invTexW = sprite.texture != null && sprite.texture.width > 0 ? 1f / sprite.texture.width : 1f;
+        float invTexH = sprite.texture != null && sprite.texture.height > 0 ? 1f / sprite.texture.height : 1f;
+        float uMin = texRect.xMin * invTexW;
+        float uMax = texRect.xMax * invTexW;
+        float vMin = texRect.yMin * invTexH;
+        float vMax = texRect.yMax * invTexH;
+
+        // 8 vertices for a 3D card with thickness
+        Vector3[] vertices = new Vector3[]
+        {
+            // Front face (Z+)
+            new Vector3(-halfW, -halfH, halfT),  // 0
+            new Vector3(halfW, -halfH, halfT),   // 1
+            new Vector3(halfW, halfH, halfT),    // 2
+            new Vector3(-halfW, halfH, halfT),   // 3
+            
+            // Back face (Z-)
+            new Vector3(-halfW, -halfH, -halfT), // 4
+            new Vector3(halfW, -halfH, -halfT),  // 5
+            new Vector3(halfW, halfH, -halfT),   // 6
+            new Vector3(-halfW, halfH, -halfT)   // 7
+        };
+
+        // UVs - map to sprite texture
+        Vector2[] uvs = new Vector2[]
+        {
+            // Front face
+            new Vector2(uMin, vMin), new Vector2(uMax, vMin), new Vector2(uMax, vMax), new Vector2(uMin, vMax),
+            // Back face (mirrored)
+            new Vector2(uMax, vMin), new Vector2(uMin, vMin), new Vector2(uMin, vMax), new Vector2(uMax, vMax)
+        };
+
+        // Triangles for all 6 faces
+        int[] triangles = new int[]
+        {
+            // Front face
+            0, 2, 1,  0, 3, 2,
+            // Back face
+            5, 6, 4,  4, 6, 7,
+            // Bottom face
+            4, 1, 5,  4, 0, 1,
+            // Top face
+            3, 6, 2,  3, 7, 6,
+            // Left face
+            4, 3, 0,  4, 7, 3,
+            // Right face
+            1, 2, 5,  5, 2, 6
+        };
+
+        var mesh = new Mesh();
+        mesh.name = "Card3D";
+        mesh.vertices = vertices;
+        mesh.uv = uvs;
+        mesh.triangles = triangles;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     private void UpdateColliderBounds(BoxCollider box)
     {
         if (box == null) return;
@@ -588,6 +733,40 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         EnsureShadow();
     }
 
+    public void Apply2DShadowPreset()
+    {
+        if (usePhysicalCard)
+            ConfigurePhysicalRendering(false, null);
+
+        shadowOnlyWhileDragging = true;
+        enableShadow = true;
+        shadowOnTable = true;
+        shadowUseSoftSprite = true;
+        shadowEllipseOnTable = true;
+        shadowEllipseWidth = 0.66f;
+        shadowEllipseHeight = 0.5f;
+        shadowColor = new Color(0f, 0f, 0f, 0.19f);
+        shadowOffset = new Vector3(0.01f, -0.018f, 0f);
+        shadowScale = 0.72f;
+        shadowSoftness = 0.17f;
+        shadowCornerRadius = 0.11f;
+        shadowTiltSquash = 0.18f;
+        shadowTiltOffset = 0.012f;
+        shadowLightDirection = new Vector2(0.34f, -1f);
+        shadowLiftProjection = 0.14f;
+        shadowLiftRange = 1f;
+        shadowLiftAlphaFade = 0.34f;
+        shadowLiftScaleBoost = 0.09f;
+        shadowLiftSquashBoost = 0.04f;
+        shadowLiftSmoothing = 12f;
+        shadowRotationFollow = 0.92f;
+        shadowRotationSideShift = 0.014f;
+        shadowInnerAlpha = 0.74f;
+
+        SetSoftShadowEnabled(true);
+        SyncShadowSprite();
+    }
+
     private void SyncShadowSprite()
     {
         if (_shadowRenderer == null || spriteRenderer == null) return;
@@ -623,8 +802,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             key = (key * 31) + h;
             key = (key * 31) + Mathf.RoundToInt(Mathf.Clamp01(shadowCornerRadius) * 1000f);
             key = (key * 31) + Mathf.RoundToInt(Mathf.Clamp(shadowSoftness, 0.01f, 0.3f) * 1000f);
+            key = (key * 31) + Mathf.RoundToInt(Mathf.Clamp(shadowInnerAlpha, 0.2f, 1f) * 1000f);
             key = (key * 31) + ppu;
             key = (key * 31) + (shadowEllipseOnTable ? 1 : 0);
+            key = (key * 31) + Mathf.RoundToInt(Mathf.Clamp(shadowEllipseWidth, 0.45f, 1f) * 1000f);
             key = (key * 31) + Mathf.RoundToInt(Mathf.Clamp(shadowEllipseHeight, 0.4f, 1f) * 1000f);
         }
         if (s_softShadowCache.TryGetValue(key, out var cached) && cached != null)
@@ -632,7 +813,16 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         int w = Mathf.Max(64, Mathf.RoundToInt(h * aspect));
         bool useEllipse = shadowEllipseOnTable && shadowOnTable;
-        var tex = GenerateSoftShadowTexture(w, h, shadowCornerRadius, shadowSoftness, useEllipse, shadowEllipseHeight);
+        var tex = GenerateSoftShadowTexture(
+            w,
+            h,
+            shadowCornerRadius,
+            shadowSoftness,
+            useEllipse,
+            shadowEllipseWidth,
+            shadowEllipseHeight,
+            shadowInnerAlpha
+        );
         var sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), ppu);
         s_softShadowCache[key] = sprite;
         return sprite;
@@ -644,7 +834,9 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
         float cornerRadius,
         float softness,
         bool useEllipse,
-        float ellipseHeight)
+        float ellipseWidth,
+        float ellipseHeight,
+        float innerAlpha)
     {
         var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
         tex.wrapMode = TextureWrapMode.Clamp;
@@ -667,12 +859,20 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
                 float alpha;
                 if (useEllipse)
                 {
-                    float rx = Mathf.Max(0.001f, halfW - (r * 0.25f));
+                    float rx = Mathf.Max(0.001f, (halfW * Mathf.Clamp(ellipseWidth, 0.45f, 1f)) - (r * 0.2f));
                     float ry = Mathf.Max(0.001f, (halfH * Mathf.Clamp(ellipseHeight, 0.4f, 1f)) - (r * 0.15f));
                     float nx = ax / rx;
                     float ny = ay / ry;
-                    float dist = Mathf.Sqrt(nx * nx + ny * ny) - 1f;
-                    alpha = 1f - Mathf.SmoothStep(0f, s * 2f, Mathf.Max(0f, dist));
+                    float radius = Mathf.Sqrt(nx * nx + ny * ny);
+                    float edgeDist = radius - 1f;
+                    float edgeFade = 1f - Mathf.SmoothStep(0f, s * 2f, Mathf.Max(0f, edgeDist));
+                    float core = Mathf.Clamp01(1f - radius);
+                    float centerFalloff = Mathf.Lerp(
+                        Mathf.Clamp(innerAlpha, 0.2f, 1f),
+                        1f,
+                        Mathf.Pow(core, 0.8f)
+                    );
+                    alpha = edgeFade * centerFalloff;
                 }
                 else
                 {
@@ -684,6 +884,16 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
                     float inside = Mathf.Min(Mathf.Max(dx, dy), 0f);
                     float dist = inside + outside;
                     alpha = 1f - Mathf.SmoothStep(0f, s, dist);
+
+                    float nx = ax / Mathf.Max(0.0001f, halfW);
+                    float ny = ay / Mathf.Max(0.0001f, halfH);
+                    float core = Mathf.Clamp01(1f - Mathf.Sqrt(nx * nx + ny * ny));
+                    float centerFalloff = Mathf.Lerp(
+                        Mathf.Clamp(innerAlpha, 0.2f, 1f),
+                        1f,
+                        Mathf.Pow(core, 0.8f)
+                    );
+                    alpha *= centerFalloff;
                 }
 
                 alpha = Mathf.Clamp01(alpha);
@@ -834,11 +1044,11 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
         _owner.NotifyWorldDragBegin(this);
 
-        // Enquanto esta segurando, a carta deve permanecer acima das demais da mao.
-        int dragOrder = _restSortingOrder + 1000;
+        // Inicia no mesmo plano da mao; a ordem dinamica por gap e aplicada no DragTo.
+        int dragOrder = _restSortingOrder;
         int idx = _owner.GetWorldHandIndex(this);
         if (idx >= 0)
-            dragOrder = _owner.GetWorldSortingOrderForIndex(idx) + 1000;
+            dragOrder = _owner.GetWorldDragSortingOrderForGap(idx);
         SetSortingOrder(dragOrder);
     }
 
@@ -883,11 +1093,10 @@ public class CardWorldView : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
             transform.localScale = SmoothScaleTransition(transform.localScale, _restLocalScale);
         }
         transform.localRotation = Quaternion.Euler(_owner.WorldCardTiltX, 0f, angleZ);
-        int order = _owner != null ? _owner.GetWorldSortingOrderForIndex(targetIndex) : _restSortingOrder;
         if (nearDiscardZone)
             SetSortingOrder(_owner.GetWorldDragTopSortingOrder());
         else
-            SetSortingOrder(order + 1000);
+            SetSortingOrder(_owner.GetWorldDragSortingOrderForGap(targetIndex));
 
         _owner.NotifyWorldDrag(this);
     }

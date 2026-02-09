@@ -36,6 +36,7 @@ public class HandWorldLayout : MonoBehaviour
 
     [Header("Sorting")]
     public int baseSortingOrder = 10;
+    [Min(2)] public int sortingStep = 10;
 
     private readonly Dictionary<Transform, Vector3> _velocities = new();
     private readonly Dictionary<Transform, float> _rotVelocities = new();
@@ -164,7 +165,8 @@ public class HandWorldLayout : MonoBehaviour
                 }
             }
 
-            card.SetSortingOrder(baseSortingOrder + i);
+            int stepOrder = Mathf.Max(2, sortingStep);
+            card.SetSortingOrder(baseSortingOrder + (i * stepOrder));
         }
     }
 
