@@ -13,7 +13,8 @@ namespace Pif.UI
         MeldCenter,
         MeldNorth,
         MeldWest,
-        MeldEast
+        MeldEast,
+        MeldSouth
     }
 
     [DisallowMultipleComponent]

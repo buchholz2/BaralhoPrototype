@@ -81,11 +81,19 @@ namespace Pif.UI
         private Button _sortSuitButton;
         private Button _sortRankButton;
         private Text _mainPlayerCardsText;
+        private Text _mainPlayerPointsText;
         private Text _northPlayerCardsText;
+        private Text _northPlayerPointsText;
         private Text _westPlayerCardsText;
+        private Text _westPlayerPointsText;
         private Text _eastPlayerCardsText;
+        private Text _eastPlayerPointsText;
 
         private RectTransform _playFieldZone;
+        private RectTransform _meldNorthZone;
+        private RectTransform _meldWestZone;
+        private RectTransform _meldEastZone;
+        private RectTransform _meldSouthZone;
         private RectTransform _drawSlotZone;
         private RectTransform _discardSlotZone;
 
@@ -150,6 +158,7 @@ namespace Pif.UI
 
             ConfigureCanvasScaler();
             BuildLayers();
+            DisableExtraHudCanvases();
             CleanupGeneratedHierarchy();
             RemoveLegacyStandaloneUi();
             CacheLegacyObjects();
@@ -273,12 +282,42 @@ namespace Pif.UI
             scaler.matchWidthOrHeight = 0.5f;
         }
 
+        private void DisableExtraHudCanvases()
+        {
+            if (mainCanvas == null)
+                return;
+
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (canvas == null || canvas == mainCanvas)
+                    continue;
+
+                string name = canvas.gameObject.name;
+                bool isLikelyDebugOrLegacyHud =
+                    name.IndexOf("HUD", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("Debug", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("Test", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (!isLikelyDebugOrLegacyHud)
+                    continue;
+
+                canvas.gameObject.SetActive(false);
+            }
+        }
+
         private void RemoveLegacyStandaloneUi()
         {
             DestroyLegacyObject("SortButtons");
+            DestroyLegacyObject("SortBySuit");
+            DestroyLegacyObject("SortByNumber");
             DestroyLegacyObject("PlayerHUD");
             DestroyLegacyObject("PlayersHUDRoot");
             DestroyLegacyObject("SortPanel");
+            DestroyLegacyObject("DebugUI");
+            DestroyLegacyObject("DebugToggle");
+            DestroyLegacyObject("Vignette");
         }
 
         private void DestroyLegacyObject(string objectName)
@@ -389,12 +428,42 @@ namespace Pif.UI
             float playMaxY = Mathf.Clamp01(1f - topBar01 - padY01);
             float playMinX = Mathf.Clamp01(side01 + padX01);
             float playMaxX = Mathf.Clamp01(1f - side01 - padX01);
+            float playCenterY = Mathf.Lerp(playMinY, playMaxY, 0.5f);
+            float playHeight = Mathf.Max(0.05f, playMaxY - playMinY);
 
             _playFieldZone = EnsureZone(zonesRoot, "PlayFieldZone", PifDropZoneType.MeldCenter, new Vector2(playMinX, playMinY), new Vector2(playMaxX, playMaxY));
+            _meldNorthZone = EnsureZone(
+                zonesRoot,
+                "MeldNorthZone",
+                PifDropZoneType.MeldNorth,
+                new Vector2(playMinX + 0.06f, Mathf.Lerp(playCenterY, playMaxY, 0.58f)),
+                new Vector2(playMaxX - 0.06f, playMaxY - 0.012f));
+            _meldWestZone = EnsureZone(
+                zonesRoot,
+                "MeldWestZone",
+                PifDropZoneType.MeldWest,
+                new Vector2(playMinX + 0.012f, Mathf.Clamp01(playCenterY - playHeight * 0.24f)),
+                new Vector2(Mathf.Lerp(playMinX, playMaxX, 0.28f), Mathf.Clamp01(playCenterY + playHeight * 0.24f)));
+            _meldEastZone = EnsureZone(
+                zonesRoot,
+                "MeldEastZone",
+                PifDropZoneType.MeldEast,
+                new Vector2(Mathf.Lerp(playMinX, playMaxX, 0.72f), Mathf.Clamp01(playCenterY - playHeight * 0.24f)),
+                new Vector2(playMaxX - 0.012f, Mathf.Clamp01(playCenterY + playHeight * 0.24f)));
+            _meldSouthZone = EnsureZone(
+                zonesRoot,
+                "MeldSouthZone",
+                PifDropZoneType.MeldSouth,
+                new Vector2(playMinX + 0.08f, playMinY + 0.01f),
+                new Vector2(playMaxX - 0.08f, Mathf.Clamp01(playMinY + playHeight * 0.22f)));
 
             _drawSlotZone = EnsureZone(_playFieldZone, "DrawSlot", PifDropZoneType.DrawPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
             _discardSlotZone = EnsureZone(_playFieldZone, "DiscardSlot", PifDropZoneType.DiscardPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
 
+            ConfigureMeldGroupsRoot(_meldNorthZone, true);
+            ConfigureMeldGroupsRoot(_meldWestZone, false);
+            ConfigureMeldGroupsRoot(_meldEastZone, false);
+            ConfigureMeldGroupsRoot(_meldSouthZone, true);
             ConfigureCenterSlots();
             ApplyZoneStyle();
         }
@@ -406,7 +475,11 @@ namespace Pif.UI
 
             HashSet<string> rootAllowed = new HashSet<string>
             {
-                "PlayFieldZone"
+                "PlayFieldZone",
+                "MeldNorthZone",
+                "MeldWestZone",
+                "MeldEastZone",
+                "MeldSouthZone"
             };
 
             RemoveUnexpectedChildren(zonesRoot, rootAllowed);
@@ -421,6 +494,88 @@ namespace Pif.UI
                 };
                 RemoveUnexpectedChildren(playFieldRect, centerAllowed);
             }
+
+            CleanupMeldGroupsHierarchy(zonesRoot.Find("MeldNorthZone") as RectTransform);
+            CleanupMeldGroupsHierarchy(zonesRoot.Find("MeldWestZone") as RectTransform);
+            CleanupMeldGroupsHierarchy(zonesRoot.Find("MeldEastZone") as RectTransform);
+            CleanupMeldGroupsHierarchy(zonesRoot.Find("MeldSouthZone") as RectTransform);
+        }
+
+        private void CleanupMeldGroupsHierarchy(RectTransform meldZone)
+        {
+            if (meldZone == null)
+                return;
+
+            HashSet<string> allowed = new HashSet<string> { "GroupsRoot" };
+            RemoveUnexpectedChildren(meldZone, allowed);
+        }
+
+        private void ConfigureMeldGroupsRoot(RectTransform meldZone, bool horizontal)
+        {
+            if (meldZone == null)
+                return;
+
+            RectTransform groupsRoot = EnsureRectChild(meldZone, "GroupsRoot");
+            StretchFull(groupsRoot);
+            groupsRoot.offsetMin = new Vector2(8f, 8f);
+            groupsRoot.offsetMax = new Vector2(-8f, -8f);
+
+            if (horizontal)
+            {
+                HorizontalLayoutGroup layout = groupsRoot.GetComponent<HorizontalLayoutGroup>();
+                if (layout == null)
+                    layout = groupsRoot.gameObject.AddComponent<HorizontalLayoutGroup>();
+                layout.childAlignment = TextAnchor.MiddleCenter;
+                layout.childControlWidth = false;
+                layout.childControlHeight = false;
+                layout.childForceExpandWidth = false;
+                layout.childForceExpandHeight = false;
+                layout.spacing = 10f;
+                layout.padding = new RectOffset(0, 0, 0, 0);
+
+                VerticalLayoutGroup vertical = groupsRoot.GetComponent<VerticalLayoutGroup>();
+                if (vertical != null)
+                {
+                    if (Application.isPlaying)
+                        Object.Destroy(vertical);
+                    else
+                        Object.DestroyImmediate(vertical);
+                }
+            }
+            else
+            {
+                VerticalLayoutGroup layout = groupsRoot.GetComponent<VerticalLayoutGroup>();
+                if (layout == null)
+                    layout = groupsRoot.gameObject.AddComponent<VerticalLayoutGroup>();
+                layout.childAlignment = TextAnchor.MiddleCenter;
+                layout.childControlWidth = false;
+                layout.childControlHeight = false;
+                layout.childForceExpandWidth = false;
+                layout.childForceExpandHeight = false;
+                layout.spacing = 10f;
+                layout.padding = new RectOffset(0, 0, 0, 0);
+
+                HorizontalLayoutGroup horizontalLayout = groupsRoot.GetComponent<HorizontalLayoutGroup>();
+                if (horizontalLayout != null)
+                {
+                    if (Application.isPlaying)
+                        Object.Destroy(horizontalLayout);
+                    else
+                        Object.DestroyImmediate(horizontalLayout);
+                }
+            }
+
+            ContentSizeFitter fitter = groupsRoot.GetComponent<ContentSizeFitter>();
+            if (fitter == null)
+                fitter = groupsRoot.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = horizontal ? ContentSizeFitter.FitMode.PreferredSize : ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = horizontal ? ContentSizeFitter.FitMode.Unconstrained : ContentSizeFitter.FitMode.PreferredSize;
+
+            CanvasGroup group = groupsRoot.GetComponent<CanvasGroup>();
+            if (group == null)
+                group = groupsRoot.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
         }
 
         private void RemoveUnexpectedChildren(RectTransform parent, HashSet<string> allowedNames)
@@ -560,7 +715,7 @@ namespace Pif.UI
                 new Vector2(0.5f, 1f),
                 opponentDynamicSize,
                 new Vector2(0f, -northInsetY));
-            _northPlayerCardsText = ConfigureOpponentPanel(northPanel, "Norte", seatNorthColor);
+            ConfigureOpponentPanel(northPanel, "Norte", seatNorthColor, out _northPlayerCardsText, out _northPlayerPointsText);
 
             RectTransform westPanel = EnsureHudPanel(
                 "PlayerWestPanel",
@@ -569,7 +724,7 @@ namespace Pif.UI
                 new Vector2(0f, 0.5f),
                 opponentDynamicSize,
                 new Vector2(sideInset, 0f));
-            _westPlayerCardsText = ConfigureOpponentPanel(westPanel, "Oeste", seatWestColor);
+            ConfigureOpponentPanel(westPanel, "Oeste", seatWestColor, out _westPlayerCardsText, out _westPlayerPointsText);
 
             RectTransform eastPanel = EnsureHudPanel(
                 "PlayerEastPanel",
@@ -578,7 +733,7 @@ namespace Pif.UI
                 new Vector2(1f, 0.5f),
                 opponentDynamicSize,
                 new Vector2(-sideInset, 0f));
-            _eastPlayerCardsText = ConfigureOpponentPanel(eastPanel, "Leste", seatEastColor);
+            ConfigureOpponentPanel(eastPanel, "Leste", seatEastColor, out _eastPlayerCardsText, out _eastPlayerPointsText);
         }
 
         private RectTransform EnsureHudPanel(string panelName, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 panelSize, Vector2 anchoredPos)
@@ -596,6 +751,7 @@ namespace Pif.UI
 
         private void ConfigureMainPlayerPanel(RectTransform panel, string playerName, Color teamColor)
         {
+            EnsurePanelChrome(panel, panelCornerRadius, panelFillOpacity + 0.06f, panelStrokeOpacity + 0.08f);
             EnsureTeamStripe(panel, teamColor, new Vector2(6f, 0f), panel.rect.height - 14f, 4f, 0.68f);
             EnsureAvatar(panel, new Vector2(18f, 0f), 42f, 0.28f);
 
@@ -616,6 +772,14 @@ namespace Pif.UI
             cardsRect.sizeDelta = new Vector2(0f, 22f);
             cardsRect.anchoredPosition = new Vector2(64f, -34f);
             _mainPlayerCardsText = EnsureText(cardsRect, "9 cartas", 13, new Color(1f, 1f, 1f, 0.75f), TextAnchor.MiddleLeft);
+
+            RectTransform pointsRect = EnsureRectChild(panel, "Points");
+            pointsRect.anchorMin = new Vector2(1f, 1f);
+            pointsRect.anchorMax = new Vector2(1f, 1f);
+            pointsRect.pivot = new Vector2(1f, 1f);
+            pointsRect.sizeDelta = new Vector2(96f, 22f);
+            pointsRect.anchoredPosition = new Vector2(-104f, -10f);
+            _mainPlayerPointsText = EnsureText(pointsRect, "0 pts", 13, new Color(1f, 1f, 1f, 0.78f), TextAnchor.MiddleRight);
 
             RectTransform turnBadge = EnsureRectChild(panel, "TurnBadge");
             turnBadge.anchorMin = new Vector2(1f, 1f);
@@ -650,7 +814,7 @@ namespace Pif.UI
             ConfigureSortControls(controlsHost);
         }
 
-        private Text ConfigureOpponentPanel(RectTransform panel, string playerName, Color teamColor)
+        private void ConfigureOpponentPanel(RectTransform panel, string playerName, Color teamColor, out Text cardsText, out Text pointsText)
         {
             EnsureTeamStripe(panel, teamColor, new Vector2(6f, 0f), panel.rect.height - 12f, 3f, 0.56f);
             EnsureAvatar(panel, new Vector2(16f, 0f), 28f, 0.22f);
@@ -668,7 +832,15 @@ namespace Pif.UI
             cardsRect.anchorMax = new Vector2(1f, 0.5f);
             cardsRect.offsetMin = new Vector2(52f, 4f);
             cardsRect.offsetMax = new Vector2(-34f, 4f);
-            return EnsureText(cardsRect, "9 cartas", 13, new Color(1f, 1f, 1f, 0.72f), TextAnchor.MiddleLeft);
+            cardsText = EnsureText(cardsRect, "9 cartas", 13, new Color(1f, 1f, 1f, 0.72f), TextAnchor.MiddleLeft);
+
+            RectTransform pointsRect = EnsureRectChild(panel, "Points");
+            pointsRect.anchorMin = new Vector2(1f, 0.5f);
+            pointsRect.anchorMax = new Vector2(1f, 0.5f);
+            pointsRect.pivot = new Vector2(1f, 0.5f);
+            pointsRect.sizeDelta = new Vector2(64f, 20f);
+            pointsRect.anchoredPosition = new Vector2(-14f, 14f);
+            pointsText = EnsureText(pointsRect, "0", 12, new Color(1f, 1f, 1f, 0.72f), TextAnchor.MiddleRight);
         }
 
         private void EnsureTurnDot(RectTransform panel)
@@ -898,6 +1070,7 @@ namespace Pif.UI
             leftRegion.anchorMax = new Vector2(0.26f, 1f);
             leftRegion.offsetMin = new Vector2(12f, 0f);
             leftRegion.offsetMax = new Vector2(-8f, 0f);
+            RemoveUnexpectedChildren(leftRegion, new HashSet<string> { "StatusLabel" });
             EnsureTopBarLabel(leftRegion, "StatusLabel", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.62f), TextAnchor.MiddleLeft).text = "Sala PIF";
 
             RectTransform centerRegion = EnsureRectChild(topBar, "CenterRegion");
@@ -905,13 +1078,15 @@ namespace Pif.UI
             centerRegion.anchorMax = new Vector2(0.74f, 1f);
             centerRegion.offsetMin = new Vector2(8f, 0f);
             centerRegion.offsetMax = new Vector2(-8f, 0f);
-            EnsureTopBarLabel(centerRegion, "ScoreboardLabel", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.94f), TextAnchor.MiddleCenter).text = "Voce 0  |  Norte 0  |  Oeste 0  |  Leste 0";
+            RemoveUnexpectedChildren(centerRegion, new HashSet<string> { "StatusCenterLabel" });
+            EnsureTopBarLabel(centerRegion, "StatusCenterLabel", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.82f), TextAnchor.MiddleCenter).text = "PIF Individual";
 
             RectTransform rightRegion = EnsureRectChild(topBar, "RightRegion");
             rightRegion.anchorMin = new Vector2(0.74f, 0f);
             rightRegion.anchorMax = new Vector2(1f, 1f);
             rightRegion.offsetMin = new Vector2(8f, 10f);
             rightRegion.offsetMax = new Vector2(-10f, -10f);
+            RemoveUnexpectedChildren(rightRegion, new HashSet<string> { "ConfigButton", "ExitButton" });
 
             HorizontalLayoutGroup row = rightRegion.GetComponent<HorizontalLayoutGroup>();
             if (row == null)
@@ -1087,13 +1262,21 @@ namespace Pif.UI
         {
             if (gameBootstrap != null && _mainPlayerCardsText != null)
                 _mainPlayerCardsText.text = $"{Mathf.Max(0, gameBootstrap.PlayerHandCount)} cartas";
+            if (_mainPlayerPointsText != null)
+                _mainPlayerPointsText.text = "0 pts";
 
             if (_northPlayerCardsText != null)
                 _northPlayerCardsText.text = "9 cartas";
+            if (_northPlayerPointsText != null)
+                _northPlayerPointsText.text = "0";
             if (_westPlayerCardsText != null)
                 _westPlayerCardsText.text = "9 cartas";
+            if (_westPlayerPointsText != null)
+                _westPlayerPointsText.text = "0";
             if (_eastPlayerCardsText != null)
                 _eastPlayerCardsText.text = "9 cartas";
+            if (_eastPlayerPointsText != null)
+                _eastPlayerPointsText.text = "0";
         }
 
         private void ConfigureHandLayoutPreset()
@@ -1161,6 +1344,10 @@ namespace Pif.UI
             float fillAlpha = showZonesDebug ? Mathf.Max(zoneFillOpacity, 0.12f) : zoneFillOpacity;
 
             ApplyStyle(_playFieldZone, strokeAlpha, fillAlpha);
+            ApplyStyle(_meldNorthZone, strokeAlpha * 0.92f, fillAlpha * 0.45f);
+            ApplyStyle(_meldWestZone, strokeAlpha * 0.92f, fillAlpha * 0.45f);
+            ApplyStyle(_meldEastZone, strokeAlpha * 0.92f, fillAlpha * 0.45f);
+            ApplyStyle(_meldSouthZone, strokeAlpha * 0.92f, fillAlpha * 0.45f);
 
             float slotStroke = Mathf.Clamp01(strokeAlpha + 0.06f);
             ApplyStyle(_drawSlotZone, slotStroke, 0f);
