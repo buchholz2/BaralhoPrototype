@@ -33,6 +33,16 @@ namespace Pif.UI
             }
         }
 
+        public int CornerSegments
+        {
+            get => cornerSegments;
+            set
+            {
+                cornerSegments = Mathf.Clamp(value, 2, 24);
+                SetVerticesDirty();
+            }
+        }
+
         public float StrokeOpacity
         {
             get => strokeOpacity;

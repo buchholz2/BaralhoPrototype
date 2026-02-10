@@ -24,17 +24,20 @@ namespace Pif.UI
         [SerializeField, Range(0f, 0.4f)] private float handBandMaxY = 0.22f;
         [SerializeField, Range(0.3f, 0.7f)] private float centerYNormalized = 0.55f;
         [SerializeField] private float centerSlotsSpacing = 340f;
-        [SerializeField] private float centerSlotsVerticalOffset = -22f;
+        [SerializeField] private float centerSlotsVerticalOffset = 42f;
         [SerializeField] private float handPeekOffset = -150f;
         [SerializeField] private Vector2 centerPileSize = new Vector2(160f, 230f);
 
         [Header("Zone Style")]
         [SerializeField] private Color zoneColor = Color.white;
         [SerializeField] private float zoneCornerRadius = 28f;
+        [SerializeField, Range(8, 24)] private int zoneCornerSegments = 16;
         [SerializeField] private float zoneStrokeWidth = 0.8f;
         [SerializeField, Range(0f, 1f)] private float zoneStrokeOpacity = 0.16f;
         [SerializeField, Range(0f, 1f)] private float zoneFillOpacity = 0.04f;
         [SerializeField] private bool showZonesDebug;
+        [SerializeField] private bool enforceMsaa = true;
+        [SerializeField, Range(0, 8)] private int targetMsaa = 4;
 
         [Header("Action Panel")]
         [SerializeField] private Vector2 actionPanelSize = new Vector2(220f, 290f);
@@ -155,12 +158,23 @@ namespace Pif.UI
             ConfigureHandLayoutPreset();
             DisableCardHoverCanvasBringToFront();
             EnsureOverlayDoesNotBlockRaycast();
+            ApplyRenderQualityHints();
 
             PifUiLayerRegistry.Register(hoverLayer, dragLayer);
 
             _lastScreen = new Vector2Int(Screen.width, Screen.height);
             _layoutApplied = true;
             SyncWorldPileRoots();
+        }
+
+        private void ApplyRenderQualityHints()
+        {
+            if (!enforceMsaa)
+                return;
+
+            int msaa = Mathf.Clamp(targetMsaa, 0, 8);
+            if (msaa > 0 && QualitySettings.antiAliasing < msaa)
+                QualitySettings.antiAliasing = msaa;
         }
 
         private bool IsPifScene()
@@ -516,7 +530,7 @@ namespace Pif.UI
             fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
 
             _sortSuitButton = EnsureSortPillButton(_sortButtons, "SortBySuit", "\u2663 Naipe");
-            _sortRankButton = EnsureSortPillButton(_sortButtons, "SortByNumber", "# Valor");
+            _sortRankButton = EnsureSortPillButton(_sortButtons, "SortByNumber", "123 Valor");
         }
 
         private Button EnsureSortPillButton(RectTransform parent, string buttonName, string label)
@@ -748,7 +762,7 @@ namespace Pif.UI
             if (_sortSuitButton == null || _sortRankButton == null)
                 return;
 
-            GameBootstrap.SortMode mode = GameBootstrap.SortMode.ByRank;
+            GameBootstrap.SortMode mode = GameBootstrap.SortMode.None;
             if (gameBootstrap != null)
                 mode = gameBootstrap.CurrentSortMode;
 
@@ -906,6 +920,7 @@ namespace Pif.UI
 
             graphic.color = zoneColor;
             graphic.CornerRadius = zoneCornerRadius;
+            graphic.CornerSegments = zoneCornerSegments;
             graphic.StrokeWidth = zoneStrokeWidth;
             graphic.StrokeOpacity = strokeAlpha;
             graphic.FillOpacity = fillAlpha;

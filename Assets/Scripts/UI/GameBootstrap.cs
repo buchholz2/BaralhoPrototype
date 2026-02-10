@@ -10,8 +10,9 @@ public class GameBootstrap : MonoBehaviour
 {
     public enum SortMode
     {
-        BySuit,
-        ByRank
+        None = 0,
+        BySuit = 1,
+        ByRank = 2
     }
 
     public bool useWorldCards = true;
@@ -119,7 +120,7 @@ public class GameBootstrap : MonoBehaviour
     public Vector2 discardAreaPadding = new Vector2(200f, 140f);
     public bool hideUiPiles = true;
     public bool sortByRank = true;
-    [SerializeField] private SortMode initialSortMode = SortMode.ByRank;
+    [SerializeField] private SortMode initialSortMode = SortMode.None;
     [SerializeField, Range(0.12f, 0.24f)] private float sortReorderDuration = 0.16f;
     [Header("Sort Buttons Layout Lock")]
     public bool lockSortButtonsLayout = true;
@@ -188,7 +189,7 @@ public class GameBootstrap : MonoBehaviour
     private CanvasGroup _sortSuitButtonGroup;
     private CanvasGroup _sortNumberButtonGroup;
     private SortButtonLockState _sortButtonLockState = SortButtonLockState.None;
-    private SortMode _sortMode = SortMode.ByRank;
+    private SortMode _sortMode = SortMode.None;
 
     private enum SortButtonLockState
     {
@@ -276,7 +277,7 @@ public class GameBootstrap : MonoBehaviour
         EnsureSortButtonsLayout();
         EnsureSortButtonsWiring();
         ResolveInitialSortMode();
-        SetSortButtonLockState(_sortMode == SortMode.ByRank ? SortButtonLockState.Rank : SortButtonLockState.Suit);
+        SetSortButtonLockState(GetLockStateForSortMode(_sortMode));
 
         CaptureMainCameraDefaults();
         Apply2DFake3DLook();
@@ -305,7 +306,8 @@ public class GameBootstrap : MonoBehaviour
 
         int n = Mathf.Max(0, initialHandSize);
         for (int i = 0; i < n && _deck.Count > 0; i++) _hand.Add(_deck.Draw());
-        SortCards(_hand);
+        if (_sortMode != SortMode.None)
+            SortCards(_hand);
         handUI.ShowCards(_hand, _back, spriteDatabase, showFaces);
     }
 
@@ -337,7 +339,8 @@ public class GameBootstrap : MonoBehaviour
 
         for (int i = n; i < pool.Count; i++) if (pool[i] != null) pool[i].gameObject.SetActive(false);
 
-        SortWorld();
+        if (_sortMode != SortMode.None)
+            SortWorld();
         if (_worldHand.Count > 0 && _worldHand[0] != null)
             worldHandCardScale = _worldHand[0].transform.localScale;
         ApplyWorld(true);
@@ -716,6 +719,12 @@ public class GameBootstrap : MonoBehaviour
 
     private void ApplySortMode()
     {
+        if (_sortMode == SortMode.None)
+        {
+            SetSortButtonLockState(SortButtonLockState.None);
+            return;
+        }
+
         ApplySortAnimationPreset();
 
         if (useWorldCards)
@@ -974,12 +983,18 @@ public class GameBootstrap : MonoBehaviour
 
     private void ResolveInitialSortMode()
     {
-        if (initialSortMode == SortMode.ByRank && !sortByRank)
-            _sortMode = SortMode.BySuit;
-        else
-            _sortMode = initialSortMode;
-
+        _sortMode = initialSortMode;
         sortByRank = _sortMode == SortMode.ByRank;
+    }
+
+    private SortButtonLockState GetLockStateForSortMode(SortMode mode)
+    {
+        return mode switch
+        {
+            SortMode.BySuit => SortButtonLockState.Suit,
+            SortMode.ByRank => SortButtonLockState.Rank,
+            _ => SortButtonLockState.None
+        };
     }
 
     private void ApplySortAnimationPreset()
