@@ -8,6 +8,12 @@ using UnityEngine.Events;
 
 public class GameBootstrap : MonoBehaviour
 {
+    public enum SortMode
+    {
+        BySuit,
+        ByRank
+    }
+
     public bool useWorldCards = true;
     public HandUI handUI;
     public Sprite cardBackBlue4;
@@ -113,6 +119,8 @@ public class GameBootstrap : MonoBehaviour
     public Vector2 discardAreaPadding = new Vector2(200f, 140f);
     public bool hideUiPiles = true;
     public bool sortByRank = true;
+    [SerializeField] private SortMode initialSortMode = SortMode.ByRank;
+    [SerializeField, Range(0.12f, 0.24f)] private float sortReorderDuration = 0.16f;
     [Header("Sort Buttons Layout Lock")]
     public bool lockSortButtonsLayout = true;
     public Vector2 sortButtonsRootOffset = new Vector2(-36f, 30f);
@@ -180,6 +188,7 @@ public class GameBootstrap : MonoBehaviour
     private CanvasGroup _sortSuitButtonGroup;
     private CanvasGroup _sortNumberButtonGroup;
     private SortButtonLockState _sortButtonLockState = SortButtonLockState.None;
+    private SortMode _sortMode = SortMode.ByRank;
 
     private enum SortButtonLockState
     {
@@ -189,6 +198,8 @@ public class GameBootstrap : MonoBehaviour
     }
 
     public bool IsWorldDragActive => _dragCard != null;
+    public SortMode CurrentSortMode => _sortMode;
+    public int PlayerHandCount => _hand.Count;
     public float WorldCardTiltX => worldHandLayout != null ? worldHandLayout.tiltX : 0f;
     public float WorldShadowPlaneZ => worldPlaneZ + worldShadowPlaneOffset;
 
@@ -264,7 +275,8 @@ public class GameBootstrap : MonoBehaviour
 
         EnsureSortButtonsLayout();
         EnsureSortButtonsWiring();
-        SetSortButtonLockState(SortButtonLockState.None);
+        ResolveInitialSortMode();
+        SetSortButtonLockState(_sortMode == SortMode.ByRank ? SortButtonLockState.Rank : SortButtonLockState.Suit);
 
         CaptureMainCameraDefaults();
         Apply2DFake3DLook();
@@ -678,8 +690,9 @@ public class GameBootstrap : MonoBehaviour
 
     public void SortRank()
     {
-        if (sortByRank && _sortButtonLockState == SortButtonLockState.Rank)
+        if (_sortMode == SortMode.ByRank && _sortButtonLockState == SortButtonLockState.Rank)
             return;
+        _sortMode = SortMode.ByRank;
         sortByRank = true;
         ApplySortMode();
         SetSortButtonLockState(SortButtonLockState.Rank);
@@ -687,8 +700,9 @@ public class GameBootstrap : MonoBehaviour
 
     public void SortSuit()
     {
-        if (!sortByRank && _sortButtonLockState == SortButtonLockState.Suit)
+        if (_sortMode == SortMode.BySuit && _sortButtonLockState == SortButtonLockState.Suit)
             return;
+        _sortMode = SortMode.BySuit;
         sortByRank = false;
         ApplySortMode();
         SetSortButtonLockState(SortButtonLockState.Suit);
@@ -696,12 +710,14 @@ public class GameBootstrap : MonoBehaviour
 
     public void ToggleSortMode()
     {
-        if (sortByRank) SortSuit();
+        if (_sortMode == SortMode.ByRank) SortSuit();
         else SortRank();
     }
 
     private void ApplySortMode()
     {
+        ApplySortAnimationPreset();
+
         if (useWorldCards)
         {
             SortWorld();
@@ -710,7 +726,8 @@ public class GameBootstrap : MonoBehaviour
         }
 
         SortCards(_hand);
-        handUI?.ShowCards(_hand, _back, spriteDatabase, showFaces);
+        if (handUI != null)
+            handUI.AnimateSort(_hand, sortReorderDuration, _back, spriteDatabase, showFaces);
     }
 
     private void AddWorldCard(Card card)
@@ -896,18 +913,54 @@ public class GameBootstrap : MonoBehaviour
     private void SortWorld()
     {
         _worldHand.RemoveAll(v => v == null);
-        _worldHand.Sort((a, b) => CompareCards(a.CardData, b.CardData));
+        if (_worldHand.Count <= 1)
+        {
+            SyncHandFromWorld();
+            return;
+        }
+
+        var indexed = new List<(CardWorldView view, int index)>(_worldHand.Count);
+        for (int i = 0; i < _worldHand.Count; i++)
+            indexed.Add((_worldHand[i], i));
+
+        indexed.Sort((a, b) =>
+        {
+            int cmp = CompareCards(a.view.CardData, b.view.CardData);
+            if (cmp != 0)
+                return cmp;
+            return a.index.CompareTo(b.index);
+        });
+
+        for (int i = 0; i < indexed.Count; i++)
+            _worldHand[i] = indexed[i].view;
+
         SyncHandFromWorld();
     }
 
     private void SortCards(List<Card> list)
     {
-        list.Sort(CompareCards);
+        if (list == null || list.Count <= 1)
+            return;
+
+        var indexed = new List<(Card card, int index)>(list.Count);
+        for (int i = 0; i < list.Count; i++)
+            indexed.Add((list[i], i));
+
+        indexed.Sort((a, b) =>
+        {
+            int cmp = CompareCards(a.card, b.card);
+            if (cmp != 0)
+                return cmp;
+            return a.index.CompareTo(b.index);
+        });
+
+        for (int i = 0; i < indexed.Count; i++)
+            list[i] = indexed[i].card;
     }
 
     private int CompareCards(Card a, Card b)
     {
-        if (sortByRank)
+        if (_sortMode == SortMode.ByRank)
         {
             int r = ((int)a.Rank).CompareTo((int)b.Rank);
             if (r != 0) return r;
@@ -917,6 +970,27 @@ public class GameBootstrap : MonoBehaviour
         int s = ((int)a.Suit).CompareTo((int)b.Suit);
         if (s != 0) return s;
         return ((int)a.Rank).CompareTo((int)b.Rank);
+    }
+
+    private void ResolveInitialSortMode()
+    {
+        if (initialSortMode == SortMode.ByRank && !sortByRank)
+            _sortMode = SortMode.BySuit;
+        else
+            _sortMode = initialSortMode;
+
+        sortByRank = _sortMode == SortMode.ByRank;
+    }
+
+    private void ApplySortAnimationPreset()
+    {
+        float duration = Mathf.Clamp(sortReorderDuration, 0.12f, 0.24f);
+        if (worldHandLayout != null)
+        {
+            worldHandLayout.smooth = true;
+            worldHandLayout.smoothTime = duration;
+            worldHandLayout.rotationSmoothTime = duration;
+        }
     }
 
     private void SyncHandFromWorld()

@@ -191,6 +191,81 @@ public class HandUI : MonoBehaviour
         }
     }
 
+    public void AnimateSort(IReadOnlyList<Card> orderedCards, float duration, Sprite backSprite, CardSpriteDatabase db, bool showFace)
+    {
+        if (orderedCards == null)
+            return;
+
+        Configure(backSprite, db, showFace);
+
+        if (container == null || fanLayout == null || _spawned.Count != orderedCards.Count || _spawned.Count == 0)
+        {
+            ShowCards(new List<Card>(orderedCards), backSprite, db, showFace);
+            return;
+        }
+
+        var available = new List<CardView>(_spawned.Count);
+        for (int i = 0; i < _spawned.Count; i++)
+        {
+            if (_spawned[i] != null)
+                available.Add(_spawned[i]);
+        }
+
+        if (available.Count != orderedCards.Count)
+        {
+            ShowCards(new List<Card>(orderedCards), backSprite, db, showFace);
+            return;
+        }
+
+        var reordered = new List<CardView>(orderedCards.Count);
+        for (int i = 0; i < orderedCards.Count; i++)
+        {
+            Card target = orderedCards[i];
+            int matchIndex = FindCardViewIndex(available, target);
+            if (matchIndex < 0)
+            {
+                ShowCards(new List<Card>(orderedCards), backSprite, db, showFace);
+                return;
+            }
+
+            reordered.Add(available[matchIndex]);
+            available.RemoveAt(matchIndex);
+        }
+
+        float tweenDuration = Mathf.Clamp(duration, 0.12f, 0.24f);
+        int total = reordered.Count;
+        for (int i = 0; i < total; i++)
+        {
+            CardView view = reordered[i];
+            if (view == null)
+                continue;
+
+            var rt = view.GetComponent<RectTransform>();
+            if (rt == null)
+                continue;
+
+            rt.SetSiblingIndex(i);
+            fanLayout.GetLayout(i, total, out var targetPos, out var targetAngle);
+            view.SetAnimating(true);
+            rt.DOKill();
+            rt.DOAnchorPos(targetPos, tweenDuration).SetEase(Ease.OutCubic);
+            rt.DORotateQuaternion(Quaternion.Euler(0f, 0f, targetAngle), tweenDuration).SetEase(Ease.OutCubic);
+            rt.DOScale(Vector3.one, tweenDuration).SetEase(Ease.OutCubic);
+        }
+
+        _spawned.Clear();
+        _spawned.AddRange(reordered);
+
+        DOVirtual.DelayedCall(tweenDuration + 0.02f, () =>
+        {
+            for (int i = 0; i < _spawned.Count; i++)
+            {
+                if (_spawned[i] != null)
+                    _spawned[i].SetAnimating(false);
+            }
+        }, false);
+    }
+
     public CardView AddCard(Card card, Vector2? startLocalPos, bool animate, bool flipOnDraw)
     {
         return AddCardInternal(card, startLocalPos, null, animate, flipOnDraw);
@@ -406,6 +481,22 @@ public class HandUI : MonoBehaviour
         var size = rt.rect.size;
         var offset = new Vector2((rt.pivot.x - 0.5f) * size.x, (rt.pivot.y - 0.5f) * size.y);
         return targetLocal + offset;
+    }
+
+    private static int FindCardViewIndex(List<CardView> available, Card target)
+    {
+        for (int i = 0; i < available.Count; i++)
+        {
+            CardView candidate = available[i];
+            if (candidate == null)
+                continue;
+
+            Card data = candidate.CardData;
+            if (data.Suit == target.Suit && data.Rank == target.Rank)
+                return i;
+        }
+
+        return -1;
     }
 
     private void UpdateEdgeClamp()

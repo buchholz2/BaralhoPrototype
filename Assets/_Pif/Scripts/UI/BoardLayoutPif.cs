@@ -38,12 +38,18 @@ namespace Pif.UI
 
         [Header("Action Panel")]
         [SerializeField] private Vector2 actionPanelSize = new Vector2(220f, 290f);
-        [SerializeField] private float actionButtonSize = 88f;
-        [SerializeField] private Vector2 hudPanelSize = new Vector2(220f, 62f);
-        [SerializeField] private Color hudPanelColor = new Color(0f, 0f, 0f, 0.35f);
+        [SerializeField] private Vector2 mainPlayerPanelSize = new Vector2(360f, 104f);
+        [SerializeField] private Vector2 opponentPanelSize = new Vector2(210f, 58f);
+        [SerializeField] private Vector2 sortPillSize = new Vector2(122f, 36f);
+        [SerializeField] private float panelCornerRadius = 16f;
+        [SerializeField] private float panelStrokeWidth = 1f;
+        [SerializeField] private Color panelFillColor = new Color(0f, 0f, 0f, 0.9f);
+        [SerializeField] private float panelFillOpacity = 0.36f;
+        [SerializeField] private float panelStrokeOpacity = 0.15f;
         [SerializeField] private float topBarHeight = 56f;
         [SerializeField] private Color teamAColor = new Color(0.29f, 0.56f, 0.95f, 0.95f);
         [SerializeField] private Color teamBColor = new Color(0.95f, 0.65f, 0.24f, 0.95f);
+        [SerializeField] private Color sortAccentColor = new Color(0.96f, 0.82f, 0.44f, 1f);
 
         [Header("Runtime Layers")]
         [SerializeField] private RectTransform tableBgLayer;
@@ -62,6 +68,12 @@ namespace Pif.UI
         private RectTransform _handPanel;
         private RectTransform _handContainer;
         private RectTransform _sortButtons;
+        private Button _sortSuitButton;
+        private Button _sortRankButton;
+        private Text _mainPlayerCardsText;
+        private Text _northPlayerCardsText;
+        private Text _westPlayerCardsText;
+        private Text _eastPlayerCardsText;
 
         private RectTransform _playFieldZone;
         private RectTransform _centerZone;
@@ -100,6 +112,8 @@ namespace Pif.UI
                 TryApplyLayout();
 
             SyncWorldPileRoots();
+            RefreshSortPillVisuals();
+            RefreshPlayerHudCounters();
         }
 
         private void OnDisable()
@@ -237,6 +251,11 @@ namespace Pif.UI
                 gameBootstrap.showChalkDemarcations = false;
                 gameBootstrap.lockSortButtonsLayout = false;
                 gameBootstrap.lockWorldPileRootsToCenterZone = false;
+                gameBootstrap.sortButtonNormalAlpha = 1f;
+                gameBootstrap.sortButtonHoverAlpha = 1f;
+                gameBootstrap.sortButtonPressedAlpha = 1f;
+                gameBootstrap.sortButtonDisabledAlpha = 1f;
+                gameBootstrap.sortButtonFadeDuration = 0.04f;
 
                 if (gameBootstrap.chalkTableDemarcation != null)
                     gameBootstrap.chalkTableDemarcation.enabled = false;
@@ -332,59 +351,9 @@ namespace Pif.UI
             actionPanel.anchorMin = new Vector2(1f, 0f);
             actionPanel.anchorMax = new Vector2(1f, 0f);
             actionPanel.pivot = new Vector2(1f, 0f);
-
-            float marginX = mainCanvas.pixelRect.width * safeMarginPercent;
-            float marginY = mainCanvas.pixelRect.height * safeMarginPercent;
-            actionPanel.anchoredPosition = new Vector2(-marginX, marginY);
+            actionPanel.anchoredPosition = new Vector2(-12f, 12f);
             actionPanel.sizeDelta = actionPanelSize;
-
-            Image panelImage = actionPanel.GetComponent<Image>();
-            if (panelImage == null)
-                panelImage = actionPanel.gameObject.AddComponent<Image>();
-            panelImage.color = new Color(0f, 0f, 0f, 0.18f);
-            panelImage.raycastTarget = false;
-
-            if (_sortButtons == null)
-                return;
-
-            _sortButtons.SetParent(actionPanel, false);
-            _sortButtons.anchorMin = Vector2.zero;
-            _sortButtons.anchorMax = Vector2.one;
-            _sortButtons.offsetMin = new Vector2(12f, 12f);
-            _sortButtons.offsetMax = new Vector2(-12f, -12f);
-            _sortButtons.pivot = new Vector2(0.5f, 0.5f);
-            _sortButtons.anchoredPosition = Vector2.zero;
-
-            VerticalLayoutGroup layout = _sortButtons.GetComponent<VerticalLayoutGroup>();
-            if (layout == null)
-                layout = _sortButtons.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-            layout.spacing = 12f;
-            layout.padding = new RectOffset(0, 0, 0, 0);
-
-            ContentSizeFitter fitter = _sortButtons.GetComponent<ContentSizeFitter>();
-            if (fitter == null)
-                fitter = _sortButtons.gameObject.AddComponent<ContentSizeFitter>();
-            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
-
-            for (int i = 0; i < _sortButtons.childCount; i++)
-            {
-                if (!(_sortButtons.GetChild(i) is RectTransform child))
-                    continue;
-
-                LayoutElement element = child.GetComponent<LayoutElement>();
-                if (element == null)
-                    element = child.gameObject.AddComponent<LayoutElement>();
-
-                element.minWidth = actionButtonSize;
-                element.minHeight = actionButtonSize;
-                element.preferredWidth = actionButtonSize;
-                element.preferredHeight = actionButtonSize;
-            }
+            actionPanel.gameObject.SetActive(false);
         }
 
         private void ConfigurePlayersHud()
@@ -393,84 +362,317 @@ namespace Pif.UI
             StretchFull(playersHudRoot);
             playersHudRoot.SetSiblingIndex(0);
 
-            EnsurePlayerPanel("PlayerSouthHUD", new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 24f), "Voce", "9", teamAColor);
-            EnsurePlayerPanel("PlayerNorthHUD", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -22f), "Oponente Norte", "9", teamAColor);
-            EnsurePlayerPanel("PlayerWestHUD", new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 0f), "Oponente Oeste", "9", teamBColor);
-            EnsurePlayerPanel("PlayerEastHUD", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-22f, 0f), "Oponente Leste", "9", teamBColor);
+            float southY = Mathf.Max(14f, mainCanvas.pixelRect.height * 0.02f);
+
+            RectTransform mainPanel = EnsureHudPanel(
+                "PlayerSouthHUD",
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                mainPlayerPanelSize,
+                new Vector2(18f, southY));
+            ConfigureMainPlayerPanel(mainPanel, "Voce", teamAColor);
+
+            RectTransform northPanel = EnsureHudPanel(
+                "PlayerNorthHUD",
+                new Vector2(0.5f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0.5f, 1f),
+                opponentPanelSize,
+                new Vector2(0f, -18f));
+            _northPlayerCardsText = ConfigureOpponentPanel(northPanel, "Oponente Norte", teamAColor);
+
+            RectTransform westPanel = EnsureHudPanel(
+                "PlayerWestHUD",
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                opponentPanelSize,
+                new Vector2(18f, 0f));
+            _westPlayerCardsText = ConfigureOpponentPanel(westPanel, "Oponente Oeste", teamBColor);
+
+            RectTransform eastPanel = EnsureHudPanel(
+                "PlayerEastHUD",
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(1f, 0.5f),
+                opponentPanelSize,
+                new Vector2(-18f, 0f));
+            _eastPlayerCardsText = ConfigureOpponentPanel(eastPanel, "Oponente Leste", teamBColor);
         }
 
-        private void EnsurePlayerPanel(string panelName, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPos, string playerName, string cardCount, Color teamColor)
+        private RectTransform EnsureHudPanel(string panelName, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 panelSize, Vector2 anchoredPos)
         {
             RectTransform panel = EnsureRectChild(playersHudRoot, panelName);
             panel.anchorMin = anchorMin;
             panel.anchorMax = anchorMax;
-            panel.pivot = anchorMin;
-            panel.sizeDelta = hudPanelSize;
+            panel.pivot = pivot;
+            panel.sizeDelta = panelSize;
             panel.anchoredPosition = anchoredPos;
+            panel.gameObject.SetActive(true);
+            EnsurePanelChrome(panel);
+            return panel;
+        }
 
-            Image panelImage = panel.GetComponent<Image>();
-            if (panelImage == null)
-                panelImage = panel.gameObject.AddComponent<Image>();
-            panelImage.color = hudPanelColor;
-            panelImage.raycastTarget = false;
+        private void ConfigureMainPlayerPanel(RectTransform panel, string playerName, Color teamColor)
+        {
+            EnsureTeamStripe(panel, teamColor, new Vector2(8f, 0f), panel.rect.height - 14f, 6f);
+            EnsureAvatar(panel, new Vector2(18f, 0f), 42f, 0.28f);
 
+            RectTransform nameRect = EnsureRectChild(panel, "Name");
+            nameRect.anchorMin = new Vector2(0f, 1f);
+            nameRect.anchorMax = new Vector2(1f, 1f);
+            nameRect.pivot = new Vector2(0f, 1f);
+            nameRect.sizeDelta = new Vector2(0f, 28f);
+            nameRect.anchoredPosition = new Vector2(64f, -10f);
+
+            Text nameText = EnsureText(nameRect, playerName, 19, new Color(1f, 1f, 1f, 0.95f), TextAnchor.MiddleLeft);
+            nameText.fontStyle = FontStyle.Bold;
+
+            RectTransform cardsRect = EnsureRectChild(panel, "CardCount");
+            cardsRect.anchorMin = new Vector2(0f, 1f);
+            cardsRect.anchorMax = new Vector2(1f, 1f);
+            cardsRect.pivot = new Vector2(0f, 1f);
+            cardsRect.sizeDelta = new Vector2(0f, 22f);
+            cardsRect.anchoredPosition = new Vector2(64f, -34f);
+            _mainPlayerCardsText = EnsureText(cardsRect, "9 cartas", 13, new Color(1f, 1f, 1f, 0.75f), TextAnchor.MiddleLeft);
+
+            RectTransform turnBadge = EnsureRectChild(panel, "TurnBadge");
+            turnBadge.anchorMin = new Vector2(1f, 1f);
+            turnBadge.anchorMax = new Vector2(1f, 1f);
+            turnBadge.pivot = new Vector2(1f, 1f);
+            turnBadge.sizeDelta = new Vector2(86f, 24f);
+            turnBadge.anchoredPosition = new Vector2(-10f, -10f);
+            EnsurePanelChrome(turnBadge, 12f, 0.28f, 0.18f);
+            EnsureText(turnBadge, "Sua vez", 12, new Color(1f, 0.96f, 0.88f, 0.94f), TextAnchor.MiddleCenter).fontStyle = FontStyle.Bold;
+
+            RectTransform sortRow = EnsureRectChild(panel, "SortRow");
+            sortRow.anchorMin = new Vector2(0f, 0f);
+            sortRow.anchorMax = new Vector2(1f, 0f);
+            sortRow.pivot = new Vector2(0.5f, 0f);
+            sortRow.sizeDelta = new Vector2(0f, 38f);
+            sortRow.anchoredPosition = new Vector2(0f, 8f);
+
+            RectTransform labelRect = EnsureRectChild(sortRow, "SortLabel");
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(0f, 1f);
+            labelRect.pivot = new Vector2(0f, 0.5f);
+            labelRect.sizeDelta = new Vector2(72f, 0f);
+            labelRect.anchoredPosition = new Vector2(12f, 0f);
+            EnsureText(labelRect, "Ordenar:", 13, new Color(1f, 1f, 1f, 0.82f), TextAnchor.MiddleLeft);
+
+            RectTransform controlsHost = EnsureRectChild(sortRow, "SortControlsHost");
+            controlsHost.anchorMin = new Vector2(0f, 0f);
+            controlsHost.anchorMax = new Vector2(1f, 1f);
+            controlsHost.offsetMin = new Vector2(84f, 0f);
+            controlsHost.offsetMax = new Vector2(-10f, 0f);
+
+            ConfigureSortControls(controlsHost);
+        }
+
+        private Text ConfigureOpponentPanel(RectTransform panel, string playerName, Color teamColor)
+        {
+            EnsureTeamStripe(panel, teamColor, new Vector2(7f, 0f), panel.rect.height - 12f, 5f);
+            EnsureAvatar(panel, new Vector2(16f, 0f), 28f, 0.22f);
+
+            RectTransform nameRect = EnsureRectChild(panel, "Name");
+            nameRect.anchorMin = new Vector2(0f, 0.5f);
+            nameRect.anchorMax = new Vector2(1f, 1f);
+            nameRect.offsetMin = new Vector2(52f, -6f);
+            nameRect.offsetMax = new Vector2(-10f, -4f);
+            EnsureText(nameRect, playerName, 14, new Color(1f, 1f, 1f, 0.9f), TextAnchor.MiddleLeft);
+
+            RectTransform cardsRect = EnsureRectChild(panel, "CardCount");
+            cardsRect.anchorMin = new Vector2(0f, 0f);
+            cardsRect.anchorMax = new Vector2(1f, 0.5f);
+            cardsRect.offsetMin = new Vector2(52f, 4f);
+            cardsRect.offsetMax = new Vector2(-10f, 4f);
+            return EnsureText(cardsRect, "9 cartas", 12, new Color(1f, 1f, 1f, 0.72f), TextAnchor.MiddleLeft);
+        }
+
+        private void ConfigureSortControls(RectTransform host)
+        {
+            _sortButtons ??= EnsureRectChild(host, "SortButtons");
+            _sortButtons.SetParent(host, false);
+            StretchFull(_sortButtons);
+            _sortButtons.offsetMin = Vector2.zero;
+            _sortButtons.offsetMax = Vector2.zero;
+
+            HorizontalLayoutGroup layout = _sortButtons.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null)
+                layout = _sortButtons.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = false;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+            layout.spacing = 8f;
+            layout.padding = new RectOffset(0, 0, 0, 0);
+
+            ContentSizeFitter fitter = _sortButtons.GetComponent<ContentSizeFitter>();
+            if (fitter == null)
+                fitter = _sortButtons.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            _sortSuitButton = EnsureSortPillButton(_sortButtons, "SortBySuit", "\u2663 Naipe");
+            _sortRankButton = EnsureSortPillButton(_sortButtons, "SortByNumber", "# Valor");
+        }
+
+        private Button EnsureSortPillButton(RectTransform parent, string buttonName, string label)
+        {
+            RectTransform buttonRect = EnsureRectChild(parent, buttonName);
+            buttonRect.anchorMin = new Vector2(0f, 0.5f);
+            buttonRect.anchorMax = new Vector2(0f, 0.5f);
+            buttonRect.pivot = new Vector2(0f, 0.5f);
+            buttonRect.sizeDelta = sortPillSize;
+
+            LayoutElement element = buttonRect.GetComponent<LayoutElement>();
+            if (element == null)
+                element = buttonRect.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = sortPillSize.x;
+            element.preferredHeight = sortPillSize.y;
+            element.minWidth = sortPillSize.x;
+            element.minHeight = sortPillSize.y;
+
+            Button button = buttonRect.GetComponent<Button>();
+            if (button == null)
+                button = buttonRect.gameObject.AddComponent<Button>();
+            button.transition = Selectable.Transition.None;
+
+            Image hitBox = buttonRect.GetComponent<Image>();
+            if (hitBox == null)
+                hitBox = buttonRect.gameObject.AddComponent<Image>();
+            hitBox.color = new Color(1f, 1f, 1f, 0.001f);
+            hitBox.raycastTarget = true;
+            button.targetGraphic = hitBox;
+
+            DisableLegacySortFx(buttonRect);
+
+            RoundedZoneGraphic fill = EnsurePillGraphic(buttonRect, "PillFill", panelFillColor, 0f, panelFillOpacity * 0.95f, 0f);
+            fill.raycastTarget = false;
+
+            RoundedZoneGraphic stroke = EnsurePillGraphic(buttonRect, "PillStroke", Color.white, panelStrokeWidth, 0f, 0.2f);
+            stroke.raycastTarget = false;
+
+            RectTransform labelRect = EnsureRectChild(buttonRect, "Label");
+            StretchFull(labelRect);
+            labelRect.offsetMin = new Vector2(10f, 0f);
+            labelRect.offsetMax = new Vector2(-10f, 0f);
+            Text labelText = EnsureText(labelRect, label, 14, new Color(1f, 1f, 1f, 0.9f), TextAnchor.MiddleCenter);
+            labelText.raycastTarget = false;
+
+            return button;
+        }
+
+        private static void DisableLegacySortFx(RectTransform buttonRect)
+        {
+            if (buttonRect == null)
+                return;
+
+            Transform glyph = buttonRect.Find("Glyph");
+            if (glyph != null)
+                glyph.gameObject.SetActive(false);
+
+            MonoBehaviour[] scripts = buttonRect.GetComponents<MonoBehaviour>();
+            for (int i = 0; i < scripts.Length; i++)
+            {
+                MonoBehaviour script = scripts[i];
+                if (script == null)
+                    continue;
+
+                string typeName = script.GetType().Name;
+                if (typeName == "UiButtonTextFX" || typeName == "UiButtonScaleFX")
+                    script.enabled = false;
+            }
+
+            Graphic[] graphics = buttonRect.GetComponentsInChildren<Graphic>(true);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                Graphic graphic = graphics[i];
+                if (graphic == null || graphic.gameObject == buttonRect.gameObject)
+                    continue;
+
+                graphic.raycastTarget = false;
+                graphic.enabled = false;
+                graphic.gameObject.SetActive(false);
+            }
+        }
+
+        private void EnsurePanelChrome(RectTransform panel, float cornerRadiusOverride = -1f, float fillOpacityOverride = -1f, float strokeOpacityOverride = -1f)
+        {
+            float corner = cornerRadiusOverride > 0f ? cornerRadiusOverride : panelCornerRadius;
+            float fill = fillOpacityOverride >= 0f ? fillOpacityOverride : panelFillOpacity;
+            float stroke = strokeOpacityOverride >= 0f ? strokeOpacityOverride : panelStrokeOpacity;
+
+            RoundedZoneGraphic fillGraphic = EnsurePillGraphic(panel, "PanelFill", panelFillColor, 0f, fill, 0f, corner);
+            fillGraphic.raycastTarget = false;
+
+            RoundedZoneGraphic borderGraphic = EnsurePillGraphic(panel, "PanelStroke", Color.white, panelStrokeWidth, 0f, stroke, corner);
+            borderGraphic.raycastTarget = false;
+        }
+
+        private RoundedZoneGraphic EnsurePillGraphic(RectTransform parent, string name, Color color, float strokeWidth, float fillOpacity, float strokeOpacity, float cornerRadiusOverride = -1f)
+        {
+            RectTransform rect = EnsureRectChild(parent, name);
+            rect.SetAsFirstSibling();
+            StretchFull(rect);
+
+            RoundedZoneGraphic graphic = rect.GetComponent<RoundedZoneGraphic>();
+            if (graphic == null)
+                graphic = rect.gameObject.AddComponent<RoundedZoneGraphic>();
+            graphic.color = color;
+            graphic.CornerRadius = cornerRadiusOverride > 0f ? cornerRadiusOverride : Mathf.Max(8f, sortPillSize.y * 0.5f);
+            graphic.StrokeWidth = strokeWidth;
+            graphic.FillOpacity = fillOpacity;
+            graphic.StrokeOpacity = strokeOpacity;
+            return graphic;
+        }
+
+        private void EnsureTeamStripe(RectTransform panel, Color color, Vector2 anchoredPos, float height, float width)
+        {
+            RectTransform teamStripe = EnsureRectChild(panel, "TeamStripe");
+            teamStripe.anchorMin = new Vector2(0f, 0.5f);
+            teamStripe.anchorMax = new Vector2(0f, 0.5f);
+            teamStripe.pivot = new Vector2(0f, 0.5f);
+            teamStripe.sizeDelta = new Vector2(width, Mathf.Max(18f, height));
+            teamStripe.anchoredPosition = anchoredPos;
+
+            Image stripeImage = teamStripe.GetComponent<Image>();
+            if (stripeImage == null)
+                stripeImage = teamStripe.gameObject.AddComponent<Image>();
+            stripeImage.color = color;
+            stripeImage.raycastTarget = false;
+        }
+
+        private void EnsureAvatar(RectTransform panel, Vector2 anchoredPos, float size, float alpha)
+        {
             RectTransform avatar = EnsureRectChild(panel, "Avatar");
             avatar.anchorMin = new Vector2(0f, 0.5f);
             avatar.anchorMax = new Vector2(0f, 0.5f);
             avatar.pivot = new Vector2(0f, 0.5f);
-            avatar.sizeDelta = new Vector2(34f, 34f);
-            avatar.anchoredPosition = new Vector2(10f, 0f);
+            avatar.sizeDelta = new Vector2(size, size);
+            avatar.anchoredPosition = anchoredPos;
 
             Image avatarImage = avatar.GetComponent<Image>();
             if (avatarImage == null)
                 avatarImage = avatar.gameObject.AddComponent<Image>();
-            avatarImage.color = new Color(1f, 1f, 1f, 0.22f);
+            avatarImage.color = new Color(1f, 1f, 1f, alpha);
             avatarImage.raycastTarget = false;
+        }
 
-            RectTransform teamDot = EnsureRectChild(panel, "TeamDot");
-            teamDot.anchorMin = new Vector2(0f, 0.5f);
-            teamDot.anchorMax = new Vector2(0f, 0.5f);
-            teamDot.pivot = new Vector2(0f, 0.5f);
-            teamDot.sizeDelta = new Vector2(8f, 34f);
-            teamDot.anchoredPosition = new Vector2(0f, 0f);
-
-            Image dotImage = teamDot.GetComponent<Image>();
-            if (dotImage == null)
-                dotImage = teamDot.gameObject.AddComponent<Image>();
-            dotImage.color = teamColor;
-            dotImage.raycastTarget = false;
-
-            RectTransform nameTextRect = EnsureRectChild(panel, "Name");
-            nameTextRect.anchorMin = new Vector2(0f, 0.5f);
-            nameTextRect.anchorMax = new Vector2(1f, 1f);
-            nameTextRect.offsetMin = new Vector2(52f, -4f);
-            nameTextRect.offsetMax = new Vector2(-12f, -6f);
-
-            Text nameText = nameTextRect.GetComponent<Text>();
-            if (nameText == null)
-                nameText = nameTextRect.gameObject.AddComponent<Text>();
-            nameText.text = playerName;
-            nameText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            nameText.fontSize = 16;
-            nameText.alignment = TextAnchor.MiddleLeft;
-            nameText.color = new Color(1f, 1f, 1f, 0.92f);
-            nameText.raycastTarget = false;
-
-            RectTransform cardsTextRect = EnsureRectChild(panel, "CardCount");
-            cardsTextRect.anchorMin = new Vector2(0f, 0f);
-            cardsTextRect.anchorMax = new Vector2(1f, 0.5f);
-            cardsTextRect.offsetMin = new Vector2(52f, 6f);
-            cardsTextRect.offsetMax = new Vector2(-12f, 4f);
-
-            Text cardsText = cardsTextRect.GetComponent<Text>();
-            if (cardsText == null)
-                cardsText = cardsTextRect.gameObject.AddComponent<Text>();
-            cardsText.text = $"Cartas: {cardCount}";
-            cardsText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            cardsText.fontSize = 14;
-            cardsText.alignment = TextAnchor.MiddleLeft;
-            cardsText.color = new Color(1f, 1f, 1f, 0.72f);
-            cardsText.raycastTarget = false;
+        private static Text EnsureText(RectTransform rect, string content, int fontSize, Color color, TextAnchor align)
+        {
+            Text text = rect.GetComponent<Text>();
+            if (text == null)
+                text = rect.gameObject.AddComponent<Text>();
+            text.text = content;
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            text.fontSize = fontSize;
+            text.alignment = align;
+            text.color = color;
+            text.raycastTarget = false;
+            return text;
         }
 
         private void ConfigureTopBar()
@@ -539,6 +741,72 @@ namespace Pif.UI
 
             Text text = EnsureTopBarLabel(buttonRect, "Label", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.9f), TextAnchor.MiddleCenter);
             text.text = label;
+        }
+
+        private void RefreshSortPillVisuals()
+        {
+            if (_sortSuitButton == null || _sortRankButton == null)
+                return;
+
+            GameBootstrap.SortMode mode = GameBootstrap.SortMode.ByRank;
+            if (gameBootstrap != null)
+                mode = gameBootstrap.CurrentSortMode;
+
+            ApplySortPillState(_sortSuitButton, mode == GameBootstrap.SortMode.BySuit);
+            ApplySortPillState(_sortRankButton, mode == GameBootstrap.SortMode.ByRank);
+        }
+
+        private void ApplySortPillState(Button button, bool active)
+        {
+            if (button == null)
+                return;
+
+            Transform fillTransform = button.transform.Find("PillFill");
+            if (fillTransform != null)
+            {
+                RoundedZoneGraphic fill = fillTransform.GetComponent<RoundedZoneGraphic>();
+                if (fill != null)
+                {
+                    fill.color = panelFillColor;
+                    fill.FillOpacity = active ? panelFillOpacity + 0.08f : panelFillOpacity * 0.9f;
+                    fill.StrokeOpacity = 0f;
+                    fill.StrokeWidth = 0f;
+                }
+            }
+
+            Transform strokeTransform = button.transform.Find("PillStroke");
+            if (strokeTransform != null)
+            {
+                RoundedZoneGraphic stroke = strokeTransform.GetComponent<RoundedZoneGraphic>();
+                if (stroke != null)
+                {
+                    stroke.color = active ? sortAccentColor : Color.white;
+                    stroke.FillOpacity = 0f;
+                    stroke.StrokeWidth = active ? panelStrokeWidth + 0.6f : panelStrokeWidth;
+                    stroke.StrokeOpacity = active ? 0.58f : 0.2f;
+                }
+            }
+
+            Transform labelTransform = button.transform.Find("Label");
+            if (labelTransform != null)
+            {
+                Text text = labelTransform.GetComponent<Text>();
+                if (text != null)
+                    text.color = active ? new Color(1f, 0.95f, 0.84f, 0.98f) : new Color(1f, 1f, 1f, 0.9f);
+            }
+        }
+
+        private void RefreshPlayerHudCounters()
+        {
+            if (gameBootstrap != null && _mainPlayerCardsText != null)
+                _mainPlayerCardsText.text = $"{Mathf.Max(0, gameBootstrap.PlayerHandCount)} cartas";
+
+            if (_northPlayerCardsText != null)
+                _northPlayerCardsText.text = "9 cartas";
+            if (_westPlayerCardsText != null)
+                _westPlayerCardsText.text = "9 cartas";
+            if (_eastPlayerCardsText != null)
+                _eastPlayerCardsText.text = "9 cartas";
         }
 
         private void ConfigureHandLayoutPreset()
@@ -705,6 +973,7 @@ namespace Pif.UI
                 rect.SetParent(parent, false);
             }
 
+            rect.gameObject.SetActive(true);
             return rect;
         }
 
