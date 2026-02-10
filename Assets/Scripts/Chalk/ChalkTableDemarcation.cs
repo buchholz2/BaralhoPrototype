@@ -32,12 +32,16 @@ public class ChalkTableDemarcation : MonoBehaviour
     [Header("Style")]
     public string sortingLayerName = "ChalkOverlay";
     public int baseOrderInLayer = 6;
-    [Min(0.01f)] public float thickness = 0.09f;
+    [Min(0.01f)] public float thickness = 0.03f;
     [Min(0.1f)] public float repeatsPerUnit = 0.55f;
     [Range(0f, 1f)] public float opacity = 0.34f;
     [Range(0f, 1f)] public float grainStrength = 0.58f;
     public Vector2 grainScale = new Vector2(8f, 6f);
     public Color chalkTint = new Color(0.95f, 0.94f, 0.9f, 1f);
+    [Header("Simple White Lines")]
+    public bool useSimpleWhiteLines = true;
+    public Color simpleLineColor = Color.white;
+    [Range(0f, 1f)] public float simpleLineOpacity = 0.75f;
 
     [Header("Behavior")]
     public bool followBootstrapRefs = true;
@@ -51,6 +55,8 @@ public class ChalkTableDemarcation : MonoBehaviour
     public Vector2 topZoneViewportSize = new Vector2(0.32f, 0.16f);
     public Vector2 sideZoneViewportCenter = new Vector2(0.06f, 0.53f);
     public Vector2 sideZoneViewportSize = new Vector2(0.11f, 0.5f);
+    public bool centerZoneUseViewportCenter = true;
+    public Vector2 centerZoneViewportCenter = new Vector2(0.5f, 0.5f);
     public Vector2 fallbackCenterViewportCenter = new Vector2(0.5f, 0.47f);
     public Vector2 fallbackCenterViewportSize = new Vector2(0.34f, 0.23f);
     public Vector2 fallbackPlayerViewportCenter = new Vector2(0.5f, 0.16f);
@@ -58,14 +64,14 @@ public class ChalkTableDemarcation : MonoBehaviour
 
     [Header("World Layout Tuning")]
     public Vector2 centerZonePadding = new Vector2(0.95f, 0.6f);
-    public Vector2 centerZoneMinSize = new Vector2(4f, 2.1f);
+    public Vector2 centerZoneMinSize = new Vector2(5f, 3f);
     public Vector2 playerZoneSize = new Vector2(8.8f, 3.1f);
     public Vector2 playerZoneOffset = new Vector2(0f, 0.15f);
 
     private Transform _zonesRoot;
     [SerializeField] private bool _softPresetInitialized;
     [SerializeField] private int _presetVersionApplied;
-    private const int CurrentPresetVersion = 4;
+    private const int CurrentPresetVersion = 5;
 
     private void OnEnable()
     {
@@ -135,12 +141,12 @@ public class ChalkTableDemarcation : MonoBehaviour
 
     private void BuildCenterZone()
     {
+        Vector3 center = ResolveCenterZone();
+
         if (drawRoot != null && discardRoot != null)
         {
             Vector3 draw = drawRoot.position;
             Vector3 discard = discardRoot.position;
-            Vector3 center = (draw + discard) * 0.5f;
-            center.z = tablePlaneZ;
 
             float width = Mathf.Abs(draw.x - discard.x) + (centerZonePadding.x * 2f);
             float height = Mathf.Abs(draw.y - discard.y) + (centerZonePadding.y * 2f);
@@ -152,9 +158,23 @@ public class ChalkTableDemarcation : MonoBehaviour
             return;
         }
 
-        Vector3 fallbackCenter = ViewportToWorld(fallbackCenterViewportCenter);
         Vector2 fallbackSize = ViewportSizeToWorld(fallbackCenterViewportCenter, fallbackCenterViewportSize);
-        SetupRectZone(CenterZoneName, fallbackCenter, fallbackSize, 1);
+        SetupRectZone(CenterZoneName, center, fallbackSize, 1);
+    }
+
+    private Vector3 ResolveCenterZone()
+    {
+        if (centerZoneUseViewportCenter)
+            return ViewportToWorld(centerZoneViewportCenter);
+
+        if (drawRoot != null && discardRoot != null)
+        {
+            Vector3 center = (drawRoot.position + discardRoot.position) * 0.5f;
+            center.z = tablePlaneZ;
+            return center;
+        }
+
+        return ViewportToWorld(fallbackCenterViewportCenter);
     }
 
     private void BuildPlayerZone()
@@ -203,16 +223,41 @@ public class ChalkTableDemarcation : MonoBehaviour
         if (line == null)
             line = zoneTransform.gameObject.AddComponent<ChalkLine>();
 
-        line.chalkMaterial = chalkOverlayMaterial;
-        line.strokeTexture = strokeTexture;
-        line.grainTexture = grainTexture;
-        line.chalkTint = chalkTint;
-        line.opacity = opacity;
-        line.grainStrength = grainStrength;
-        line.grainScale = grainScale;
-        line.grainOffset = new Vector2((orderOffset + 1) * 0.173f, (orderOffset + 1) * 0.271f);
+        if (useSimpleWhiteLines)
+        {
+            Color whiteColor = simpleLineColor;
+            whiteColor.a = Mathf.Clamp01(simpleLineOpacity);
+            line.chalkMaterial = null;
+            line.strokeTexture = null;
+            line.grainTexture = null;
+            line.chalkTint = whiteColor;
+            line.opacity = Mathf.Clamp01(simpleLineOpacity);
+            line.grainStrength = 0f;
+            line.grainScale = Vector2.one;
+            line.grainOffset = Vector2.zero;
+            line.repeatsPerUnit = 1f;
+
+            LineRenderer lineRenderer = zoneTransform.GetComponent<LineRenderer>();
+            if (lineRenderer != null)
+            {
+                lineRenderer.startColor = whiteColor;
+                lineRenderer.endColor = whiteColor;
+            }
+        }
+        else
+        {
+            line.chalkMaterial = chalkOverlayMaterial;
+            line.strokeTexture = strokeTexture;
+            line.grainTexture = grainTexture;
+            line.chalkTint = chalkTint;
+            line.opacity = opacity;
+            line.grainStrength = grainStrength;
+            line.grainScale = grainScale;
+            line.grainOffset = new Vector2((orderOffset + 1) * 0.173f, (orderOffset + 1) * 0.271f);
+            line.repeatsPerUnit = repeatsPerUnit;
+        }
+
         line.width = thickness;
-        line.repeatsPerUnit = repeatsPerUnit;
         line.sortingLayerName = sortingLayerName;
         line.orderInLayer = baseOrderInLayer + orderOffset;
         line.cornerVertices = 0;
@@ -363,7 +408,7 @@ public class ChalkTableDemarcation : MonoBehaviour
         if (_presetVersionApplied >= CurrentPresetVersion && _softPresetInitialized)
             return;
 
-        thickness = 0.09f;
+        thickness = 0.03f;
         repeatsPerUnit = 0.55f;
         opacity = 0.34f;
         grainStrength = 0.58f;

@@ -23,6 +23,10 @@ public class GameBootstrap : MonoBehaviour
     public float worldPlaneZ;
     public Transform worldDiscardRoot;
     public Transform worldDrawRoot;
+    [Header("World Piles In Center Zone")]
+    public bool lockWorldPileRootsToCenterZone = true;
+    public Vector2 worldDrawRootCenterOffset = new Vector2(-1.2f, 0f);
+    public Vector2 worldDiscardRootCenterOffset = new Vector2(1.2f, 0f);
     public float worldShadowPlaneOffset = -0.015f;
     public bool showWorldDrawPile = true;
     [Header("Draw Pile Visual")]
@@ -1520,6 +1524,46 @@ public class GameBootstrap : MonoBehaviour
         chalkTableDemarcation.enabled = true;
         chalkTableDemarcation.Bind(this);
         chalkTableDemarcation.RebuildNow();
+        AlignWorldPileRootsToCenterZone();
+    }
+
+    private void AlignWorldPileRootsToCenterZone()
+    {
+        if (!useWorldCards || !lockWorldPileRootsToCenterZone)
+            return;
+
+        if (worldDrawRoot == null && worldDiscardRoot == null)
+            return;
+
+        if (chalkTableDemarcation == null)
+            return;
+
+        Transform zonesRoot = chalkTableDemarcation.transform.Find("ChalkTableZones");
+        if (zonesRoot == null)
+            return;
+
+        Transform centerZone = zonesRoot.Find("CenterZone");
+        if (centerZone == null)
+            return;
+
+        Vector3 centerPos = centerZone.position;
+        centerPos.z = worldPlaneZ;
+
+        if (worldDrawRoot != null)
+        {
+            worldDrawRoot.position = new Vector3(
+                centerPos.x + worldDrawRootCenterOffset.x,
+                centerPos.y + worldDrawRootCenterOffset.y,
+                worldPlaneZ);
+        }
+
+        if (worldDiscardRoot != null)
+        {
+            worldDiscardRoot.position = new Vector3(
+                centerPos.x + worldDiscardRootCenterOffset.x,
+                centerPos.y + worldDiscardRootCenterOffset.y,
+                worldPlaneZ);
+        }
     }
 
     private void EnsureSortButtonsLayout()

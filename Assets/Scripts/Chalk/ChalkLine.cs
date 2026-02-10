@@ -144,25 +144,43 @@ public class ChalkLine : MonoBehaviour
         if (_line == null)
             return;
 
-        Shader chalkShader = Shader.Find("Chalk/Overlay");
-        Material source = chalkMaterial != null ? chalkMaterial : (chalkShader != null ? new Material(chalkShader) : null);
-        if (source == null)
-            return;
-
-        if (_materialInstance != null && _line.sharedMaterial == _materialInstance)
-            return;
+        Shader fallbackShader = Shader.Find("Sprites/Default");
+        if (fallbackShader == null)
+            fallbackShader = Shader.Find("Unlit/Color");
+        if (fallbackShader == null)
+            fallbackShader = Shader.Find("Chalk/Overlay");
 
         if (_materialInstance == null)
         {
-            _materialInstance = new Material(source);
+            if (chalkMaterial != null)
+                _materialInstance = new Material(chalkMaterial);
+            else if (fallbackShader != null)
+                _materialInstance = new Material(fallbackShader);
+
+            if (_materialInstance == null)
+                return;
+
             _materialInstance.name = $"{gameObject.name}_ChalkLineMat";
         }
-        else
+
+        if (chalkMaterial != null)
         {
-            _materialInstance.CopyPropertiesFromMaterial(source);
+            if (_materialInstance.shader != chalkMaterial.shader)
+                _materialInstance.shader = chalkMaterial.shader;
+
+            _materialInstance.CopyPropertiesFromMaterial(chalkMaterial);
+        }
+        else if (fallbackShader != null)
+        {
+            if (_materialInstance.shader != fallbackShader)
+                _materialInstance.shader = fallbackShader;
+
+            if (_materialInstance.HasProperty("_Color"))
+                _materialInstance.SetColor("_Color", Color.white);
         }
 
-        _line.sharedMaterial = _materialInstance;
+        if (_line.sharedMaterial != _materialInstance)
+            _line.sharedMaterial = _materialInstance;
     }
 
     private void UpdateTiling()
