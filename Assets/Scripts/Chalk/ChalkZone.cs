@@ -15,6 +15,8 @@ public class ChalkZone : MonoBehaviour
     [Header("Shape")]
     public ZoneShape zoneShape = ZoneShape.RectZone;
     public Vector2 rectSize = new Vector2(2.2f, 3f);
+    [Min(0f)] public float rectCornerRadius = 0f;
+    [Range(2, 24)] public int rectCornerSegments = 6;
     public float circleRadius = 1.2f;
     [Range(8, 128)] public int circleSegments = 40;
     public bool polylineClosed = true;
@@ -92,13 +94,35 @@ public class ChalkZone : MonoBehaviour
     {
         float halfW = Mathf.Max(0.01f, rectSize.x) * 0.5f;
         float halfH = Mathf.Max(0.01f, rectSize.y) * 0.5f;
-        return new[]
+        float radius = Mathf.Clamp(rectCornerRadius, 0f, Mathf.Min(halfW, halfH));
+        if (radius <= 0.001f)
         {
-            new Vector3(-halfW, -halfH, 0f),
-            new Vector3(halfW, -halfH, 0f),
-            new Vector3(halfW, halfH, 0f),
-            new Vector3(-halfW, halfH, 0f)
-        };
+            return new[]
+            {
+                new Vector3(-halfW, -halfH, 0f),
+                new Vector3(halfW, -halfH, 0f),
+                new Vector3(halfW, halfH, 0f),
+                new Vector3(-halfW, halfH, 0f)
+            };
+        }
+
+        int segments = Mathf.Clamp(rectCornerSegments, 2, 48);
+        var points = new List<Vector3>(segments * 4);
+        AppendCornerArc(points, new Vector3(halfW - radius, halfH - radius, 0f), radius, 0f, 90f, segments);       // top-right
+        AppendCornerArc(points, new Vector3(-halfW + radius, halfH - radius, 0f), radius, 90f, 180f, segments);     // top-left
+        AppendCornerArc(points, new Vector3(-halfW + radius, -halfH + radius, 0f), radius, 180f, 270f, segments);   // bottom-left
+        AppendCornerArc(points, new Vector3(halfW - radius, -halfH + radius, 0f), radius, 270f, 360f, segments);    // bottom-right
+        return points.ToArray();
+    }
+
+    private static void AppendCornerArc(List<Vector3> points, Vector3 center, float radius, float startDeg, float endDeg, int segments)
+    {
+        float step = (endDeg - startDeg) / Mathf.Max(1, segments);
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = (startDeg + i * step) * Mathf.Deg2Rad;
+            points.Add(new Vector3(center.x + Mathf.Cos(angle) * radius, center.y + Mathf.Sin(angle) * radius, 0f));
+        }
     }
 
     private Vector3[] BuildCirclePoints()
@@ -123,4 +147,3 @@ public class ChalkZone : MonoBehaviour
         return polylinePoints.ToArray();
     }
 }
-

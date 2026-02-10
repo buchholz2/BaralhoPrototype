@@ -24,6 +24,13 @@ public class HandFanLayout : MonoBehaviour
     [Range(0.02f, 0.4f)] public float smoothTime = 0.08f;
     [Range(0.02f, 0.4f)] public float rotationSmoothTime = 0.08f;
 
+    [Header("Hover Focus")]
+    public bool enableFocusSpread = true;
+    [Range(0f, 24f)] public float focusSpread = 14f;
+    [Range(0.2f, 4f)] public float focusFalloff = 1.35f;
+
+    private int _focusedSiblingIndex = -1;
+
     private readonly List<RectTransform> _children = new();
     private readonly Dictionary<RectTransform, Vector2> _velocities = new();
     private readonly Dictionary<RectTransform, float> _rotVelocities = new();
@@ -31,6 +38,16 @@ public class HandFanLayout : MonoBehaviour
     private void LateUpdate() => Apply();
     private void OnValidate() => Apply();
     private void OnTransformChildrenChanged() => Apply();
+
+    public void SetFocusedSiblingIndex(int siblingIndex)
+    {
+        _focusedSiblingIndex = siblingIndex;
+    }
+
+    public void ClearFocusedSiblingIndex()
+    {
+        _focusedSiblingIndex = -1;
+    }
 
     /// <summary>
     /// Calcula posição e rotação para uma carta no índice especificado
@@ -112,6 +129,18 @@ public class HandFanLayout : MonoBehaviour
                 continue;
 
             GetLayout(i, n, out var pos, out var angle);
+
+            if (enableFocusSpread && _focusedSiblingIndex >= 0)
+            {
+                int virtualIndex = i >= _focusedSiblingIndex ? i + 1 : i;
+                int delta = virtualIndex - _focusedSiblingIndex;
+                if (delta != 0)
+                {
+                    float distance = Mathf.Abs(delta);
+                    float falloff = Mathf.Exp(-Mathf.Max(0f, distance - 1f) / Mathf.Max(0.2f, focusFalloff));
+                    pos.x += Mathf.Sign(delta) * focusSpread * falloff;
+                }
+            }
 
             bool useSmooth = smooth && Application.isPlaying;
             if (useSmooth)

@@ -12,11 +12,18 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
 {
     [SerializeField] private Image image;
 
+    [Header("Hover")]
+    public float hoverLift = 56f;
+    public float hoverScale = 1.08f;
+    public float hoverEaseDuration = 0.12f;
+
     [Header("Drag")]
     public float dragScale = 1.22f;
     public float dragLift = 40f;
     public float dragEaseDuration = 0.08f;
     public float discardDragThreshold = 120f;
+    [Range(0f, 1f)] public float discardSnapBlend = 0.45f;
+    public float discardSnapScale = 1.06f;
 
     private RectTransform _rt;
     private CanvasGroup _group;
@@ -37,6 +44,8 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
     private Vector2 _dragOffsetLocal;
     private int _origSibling;
     private Transform _origParent;
+    private Vector2 _hoverBaseAnchoredPos;
+    private Vector3 _hoverBaseScale;
 
     public bool IsDragging => _dragging;
     public bool IsAnimating => _animating;
@@ -147,6 +156,12 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
         CaptureOriginalHierarchy();
         MoveToLayer(hoverLayer);
         _isInHoverLayer = true;
+        _hoverBaseAnchoredPos = _rt.anchoredPosition;
+        _hoverBaseScale = _rt.localScale;
+        _rt.DOKill();
+        _rt.DOAnchorPos(_hoverBaseAnchoredPos + Vector2.up * hoverLift, hoverEaseDuration).SetEase(Ease.OutQuad);
+        _rt.DOScale(_hoverBaseScale * hoverScale, hoverEaseDuration).SetEase(Ease.OutQuad);
+        _owner?.NotifyCardHoverEnter(this, _origSibling);
 
         if (_hover != null)
             _hover.bringToFrontOnHover = false;
@@ -158,7 +173,10 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
             return;
 
         if (_isInHoverLayer)
+        {
+            _owner?.NotifyCardHoverExit(this);
             RestoreOriginalHierarchy(restoreSibling: true);
+        }
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -176,6 +194,9 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
             _origSibling = _origSibling >= 0 ? _origSibling : _rt.GetSiblingIndex();
         else
             _origSibling = _rt.GetSiblingIndex();
+
+        if (_isInHoverLayer)
+            _owner?.NotifyCardHoverExit(this);
 
         if (!_originalHierarchyCaptured)
             CaptureOriginalHierarchy();
@@ -231,7 +252,21 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
             out var localPoint
         );
 
-        _rt.anchoredPosition = localPoint - _dragOffsetLocal + Vector2.up * dragLift;
+        Vector2 target = localPoint - _dragOffsetLocal + Vector2.up * dragLift;
+        bool overDiscard = _owner != null && _owner.IsDiscardPoint(eventData.position, eventData.pressEventCamera);
+        if (overDiscard && _owner != null && _owner.TryGetDiscardSnapPoint(parent, eventData.pressEventCamera, out Vector2 snapLocal))
+        {
+            target = Vector2.Lerp(target, snapLocal, Mathf.Clamp01(discardSnapBlend));
+            Vector3 snapScale = Vector3.one * discardSnapScale;
+            _rt.localScale = Vector3.Lerp(_rt.localScale, snapScale, 0.35f);
+        }
+        else
+        {
+            Vector3 targetScale = Vector3.one * dragScale;
+            _rt.localScale = Vector3.Lerp(_rt.localScale, targetScale, 0.35f);
+        }
+
+        _rt.anchoredPosition = target;
     }
 
     public void OnEndDrag(PointerEventData eventData)
@@ -266,6 +301,21 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
         {
             SetAnimating(true); // trava layout antes do descarte
             _dragging = false;
+            RectTransform parent = _rt != null ? _rt.parent as RectTransform : null;
+            if (_rt != null && parent != null && _owner.TryGetDiscardSnapPoint(parent, eventData.pressEventCamera, out Vector2 snapLocal))
+            {
+                const float snapDuration = 0.14f;
+                _rt.DOKill();
+                _rt.DOAnchorPos(snapLocal, snapDuration).SetEase(Ease.OutQuad);
+                _rt.DOScale(Vector3.one, snapDuration).SetEase(Ease.OutQuad);
+                _rt.DORotateQuaternion(Quaternion.identity, snapDuration).SetEase(Ease.OutQuad);
+                DOVirtual.DelayedCall(snapDuration, () =>
+                {
+                    _owner.DiscardCard(this, snapLocal, eventData.pressEventCamera);
+                }, false);
+                return;
+            }
+
             _owner.DiscardCard(this, releaseLocal, eventData.pressEventCamera);
         }
         else
@@ -324,6 +374,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandle
         _origSibling = -1;
         _originalHierarchyCaptured = false;
         _isInHoverLayer = false;
+        _rt.localScale = Vector3.one;
     }
 }
 

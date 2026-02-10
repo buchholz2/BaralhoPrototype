@@ -32,6 +32,12 @@ public class HandUI : MonoBehaviour
     [SerializeField] private Vector2 discardRandomOffset = new Vector2(10f, 6f);
     [SerializeField] private float discardSettleDuration = 0.35f;
 
+    [Header("Hover / Clamp")]
+    [SerializeField, Range(0f, 32f)] private float hoverNeighborSpread = 14f;
+    [SerializeField, Range(0.2f, 4f)] private float hoverNeighborFalloff = 1.35f;
+    [SerializeField, Range(0f, 64f)] private float edgeClampMarginPx = 24f;
+    [SerializeField, Range(0.02f, 0.4f)] private float edgeClampSmoothTime = 0.10f;
+
     private readonly List<CardView> _spawned = new();
     private Sprite _backSprite;
     private CardSpriteDatabase _db;
@@ -39,6 +45,10 @@ public class HandUI : MonoBehaviour
 
     private RectTransform _discardArea;
     private Canvas _canvas;
+    private CardView _hoveredCard;
+    private bool _hoverSessionActive;
+    private Vector2 _handContainerBasePos;
+    private float _edgeClampVelocityX;
 
     public System.Action<Card> OnCardDiscarded;
     public IReadOnlyList<CardView> Cards => _spawned;
@@ -54,7 +64,14 @@ public class HandUI : MonoBehaviour
         if (fanLayout == null && container != null)
             fanLayout = container.GetComponent<HandFanLayout>();
         _canvas = GetComponentInParent<Canvas>();
+        if (container != null)
+            _handContainerBasePos = container.anchoredPosition;
 
+    }
+
+    private void LateUpdate()
+    {
+        UpdateEdgeClamp();
     }
 
     /// <summary>
@@ -70,6 +87,72 @@ public class HandUI : MonoBehaviour
     public void SetDiscardArea(RectTransform area)
     {
         _discardArea = area;
+    }
+
+    public bool TryGetDiscardSnapPoint(RectTransform parentRect, Camera camOverride, out Vector2 localPoint)
+    {
+        localPoint = Vector2.zero;
+        if (_discardArea == null || parentRect == null)
+            return false;
+
+        Camera cam = camOverride != null ? camOverride : (_canvas != null ? _canvas.worldCamera : null);
+        Vector3 worldCenter = GetWorldCenterForRect(_discardArea);
+        Vector2 screenCenter = RectTransformUtility.WorldToScreenPoint(cam, worldCenter);
+        return RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRect, screenCenter, cam, out localPoint);
+    }
+
+    public void NotifyCardHoverEnter(CardView view, int originalSiblingIndex)
+    {
+        if (view == null || container == null)
+            return;
+
+        _hoveredCard = view;
+        _hoverSessionActive = true;
+        _handContainerBasePos = container.anchoredPosition;
+        _edgeClampVelocityX = 0f;
+
+        if (fanLayout != null)
+        {
+            fanLayout.enableFocusSpread = true;
+            fanLayout.focusSpread = hoverNeighborSpread;
+            fanLayout.focusFalloff = hoverNeighborFalloff;
+            fanLayout.SetFocusedSiblingIndex(originalSiblingIndex);
+        }
+    }
+
+    public void NotifyCardHoverExit(CardView view)
+    {
+        if (_hoveredCard != null && view != _hoveredCard)
+            return;
+
+        _hoveredCard = null;
+        _hoverSessionActive = false;
+        _edgeClampVelocityX = 0f;
+
+        if (fanLayout != null)
+            fanLayout.ClearFocusedSiblingIndex();
+
+        if (container != null)
+        {
+            Vector2 target = new Vector2(_handContainerBasePos.x, container.anchoredPosition.y);
+            container.DOKill();
+            container.DOAnchorPos(target, 0.14f).SetEase(Ease.OutSine);
+        }
+    }
+
+    public void ApplyPifInteractionPreset()
+    {
+        returnDuration = 0.20f;
+        drawRiseDuration = 0.34f;
+        drawFlipHalf = 0.10f;
+        drawHold = 0.02f;
+        drawSettleDuration = 0.16f;
+        discardDuration = 0.16f;
+        discardScale = 1.02f;
+        discardTwist = 2f;
+        discardTargetOffset = new Vector2(0f, -4f);
+        discardRandomOffset = new Vector2(3f, 2f);
+        discardSettleDuration = 0.08f;
     }
 
     public bool IsDiscardPoint(Vector2 screenPos, Camera cam)
@@ -323,5 +406,42 @@ public class HandUI : MonoBehaviour
         var size = rt.rect.size;
         var offset = new Vector2((rt.pivot.x - 0.5f) * size.x, (rt.pivot.y - 0.5f) * size.y);
         return targetLocal + offset;
+    }
+
+    private void UpdateEdgeClamp()
+    {
+        if (!_hoverSessionActive || _hoveredCard == null || container == null)
+            return;
+
+        RectTransform hoveredRect = _hoveredCard.transform as RectTransform;
+        if (hoveredRect == null)
+            return;
+
+        Camera cam = _canvas != null ? _canvas.worldCamera : null;
+        Vector3[] corners = new Vector3[4];
+        hoveredRect.GetWorldCorners(corners);
+
+        float minX = float.MaxValue;
+        float maxX = float.MinValue;
+        for (int i = 0; i < corners.Length; i++)
+        {
+            Vector2 screen = RectTransformUtility.WorldToScreenPoint(cam, corners[i]);
+            minX = Mathf.Min(minX, screen.x);
+            maxX = Mathf.Max(maxX, screen.x);
+        }
+
+        float leftLimit = edgeClampMarginPx;
+        float rightLimit = Mathf.Max(leftLimit + 1f, Screen.width - edgeClampMarginPx);
+        float shift = 0f;
+
+        if (minX < leftLimit)
+            shift = leftLimit - minX;
+        else if (maxX > rightLimit)
+            shift = rightLimit - maxX;
+
+        Vector2 pos = container.anchoredPosition;
+        float targetX = _handContainerBasePos.x + shift;
+        pos.x = Mathf.SmoothDamp(pos.x, targetX, ref _edgeClampVelocityX, Mathf.Max(0.02f, edgeClampSmoothTime));
+        container.anchoredPosition = pos;
     }
 }

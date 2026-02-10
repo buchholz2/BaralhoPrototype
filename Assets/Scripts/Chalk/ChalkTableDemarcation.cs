@@ -41,7 +41,16 @@ public class ChalkTableDemarcation : MonoBehaviour
     [Header("Simple White Lines")]
     public bool useSimpleWhiteLines = true;
     public Color simpleLineColor = Color.white;
-    [Range(0f, 1f)] public float simpleLineOpacity = 0.75f;
+    [Range(0f, 1f)] public float simpleLineOpacity = 0.16f;
+
+    [Header("Rounded Corners")]
+    public bool useRoundedCorners = true;
+    [Min(0f)] public float cornerRadius = 0.4f;
+    [Range(2, 18)] public int cornerSegments = 6;
+
+    [Header("Debug")]
+    public bool showZonesDebug = false;
+    [Range(0f, 1f)] public float debugOpacity = 0.45f;
 
     [Header("Behavior")]
     public bool followBootstrapRefs = true;
@@ -226,12 +235,13 @@ public class ChalkTableDemarcation : MonoBehaviour
         if (useSimpleWhiteLines)
         {
             Color whiteColor = simpleLineColor;
-            whiteColor.a = Mathf.Clamp01(simpleLineOpacity);
+            float alpha = showZonesDebug ? Mathf.Clamp01(debugOpacity) : Mathf.Clamp01(simpleLineOpacity);
+            whiteColor.a = alpha;
             line.chalkMaterial = null;
             line.strokeTexture = null;
             line.grainTexture = null;
             line.chalkTint = whiteColor;
-            line.opacity = Mathf.Clamp01(simpleLineOpacity);
+            line.opacity = alpha;
             line.grainStrength = 0f;
             line.grainScale = Vector2.one;
             line.grainOffset = Vector2.zero;
@@ -250,17 +260,18 @@ public class ChalkTableDemarcation : MonoBehaviour
             line.strokeTexture = strokeTexture;
             line.grainTexture = grainTexture;
             line.chalkTint = chalkTint;
-            line.opacity = opacity;
+            line.opacity = showZonesDebug ? Mathf.Max(opacity, debugOpacity) : Mathf.Clamp01(opacity);
             line.grainStrength = grainStrength;
             line.grainScale = grainScale;
             line.grainOffset = new Vector2((orderOffset + 1) * 0.173f, (orderOffset + 1) * 0.271f);
             line.repeatsPerUnit = repeatsPerUnit;
         }
 
-        line.width = thickness;
+        float runtimeThickness = showZonesDebug ? thickness : Mathf.Max(0.008f, thickness * 0.5f);
+        line.width = runtimeThickness;
         line.sortingLayerName = sortingLayerName;
         line.orderInLayer = baseOrderInLayer + orderOffset;
-        line.cornerVertices = 0;
+        line.cornerVertices = useRoundedCorners ? Mathf.Clamp(cornerSegments / 2, 1, 8) : 0;
         line.capVertices = 0;
 
         ChalkZone zone = zoneTransform.GetComponent<ChalkZone>();
@@ -269,7 +280,9 @@ public class ChalkTableDemarcation : MonoBehaviour
 
         zone.zoneShape = ChalkZone.ZoneShape.RectZone;
         zone.rectSize = rectSize;
-        zone.thickness = thickness;
+        zone.rectCornerRadius = useRoundedCorners ? Mathf.Max(0f, cornerRadius) : 0f;
+        zone.rectCornerSegments = Mathf.Clamp(cornerSegments, 2, 24);
+        zone.thickness = runtimeThickness;
         zone.regenerateOnEnable = false;
         zone.Rebuild();
     }
@@ -408,9 +421,9 @@ public class ChalkTableDemarcation : MonoBehaviour
         if (_presetVersionApplied >= CurrentPresetVersion && _softPresetInitialized)
             return;
 
-        thickness = 0.03f;
+        thickness = 0.018f;
         repeatsPerUnit = 0.55f;
-        opacity = 0.34f;
+        opacity = 0.16f;
         grainStrength = 0.58f;
         grainScale = new Vector2(8f, 6f);
         chalkTint = new Color(0.95f, 0.94f, 0.9f, 1f);

@@ -23,17 +23,17 @@ namespace Pif.UI
         [SerializeField, Range(0f, 0.2f)] private float safeMarginPercent = 0.06f;
         [SerializeField, Range(0f, 0.4f)] private float handBandMaxY = 0.22f;
         [SerializeField, Range(0.3f, 0.7f)] private float centerYNormalized = 0.55f;
-        [SerializeField] private float centerSlotsSpacing = 280f;
-        [SerializeField] private float centerSlotsVerticalOffset = -20f;
-        [SerializeField] private float handPeekOffset = -90f;
+        [SerializeField] private float centerSlotsSpacing = 340f;
+        [SerializeField] private float centerSlotsVerticalOffset = -22f;
+        [SerializeField] private float handPeekOffset = -150f;
         [SerializeField] private Vector2 centerPileSize = new Vector2(160f, 230f);
 
         [Header("Zone Style")]
         [SerializeField] private Color zoneColor = Color.white;
-        [SerializeField] private float zoneCornerRadius = 30f;
-        [SerializeField] private float zoneStrokeWidth = 1.25f;
-        [SerializeField, Range(0f, 1f)] private float zoneStrokeOpacity = 0.35f;
-        [SerializeField, Range(0f, 1f)] private float zoneFillOpacity = 0.05f;
+        [SerializeField] private float zoneCornerRadius = 28f;
+        [SerializeField] private float zoneStrokeWidth = 0.8f;
+        [SerializeField, Range(0f, 1f)] private float zoneStrokeOpacity = 0.16f;
+        [SerializeField, Range(0f, 1f)] private float zoneFillOpacity = 0.04f;
         [SerializeField] private bool showZonesDebug;
 
         [Header("Action Panel")]
@@ -41,6 +41,9 @@ namespace Pif.UI
         [SerializeField] private float actionButtonSize = 88f;
         [SerializeField] private Vector2 hudPanelSize = new Vector2(220f, 62f);
         [SerializeField] private Color hudPanelColor = new Color(0f, 0f, 0f, 0.35f);
+        [SerializeField] private float topBarHeight = 56f;
+        [SerializeField] private Color teamAColor = new Color(0.29f, 0.56f, 0.95f, 0.95f);
+        [SerializeField] private Color teamBColor = new Color(0.95f, 0.65f, 0.24f, 0.95f);
 
         [Header("Runtime Layers")]
         [SerializeField] private RectTransform tableBgLayer;
@@ -134,6 +137,7 @@ namespace Pif.UI
             ConfigureCardsLayout();
             ConfigureActionPanel();
             ConfigurePlayersHud();
+            ConfigureTopBar();
             ConfigureHandLayoutPreset();
             DisableCardHoverCanvasBringToFront();
             EnsureOverlayDoesNotBlockRaycast();
@@ -389,13 +393,13 @@ namespace Pif.UI
             StretchFull(playersHudRoot);
             playersHudRoot.SetSiblingIndex(0);
 
-            EnsurePlayerPanel("PlayerSouthHUD", new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 24f), "Voce", "9");
-            EnsurePlayerPanel("PlayerNorthHUD", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -22f), "Oponente Norte", "9");
-            EnsurePlayerPanel("PlayerWestHUD", new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 0f), "Oponente Oeste", "9");
-            EnsurePlayerPanel("PlayerEastHUD", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-22f, 0f), "Oponente Leste", "9");
+            EnsurePlayerPanel("PlayerSouthHUD", new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 24f), "Voce", "9", teamAColor);
+            EnsurePlayerPanel("PlayerNorthHUD", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -22f), "Oponente Norte", "9", teamAColor);
+            EnsurePlayerPanel("PlayerWestHUD", new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 0f), "Oponente Oeste", "9", teamBColor);
+            EnsurePlayerPanel("PlayerEastHUD", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-22f, 0f), "Oponente Leste", "9", teamBColor);
         }
 
-        private void EnsurePlayerPanel(string panelName, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPos, string playerName, string cardCount)
+        private void EnsurePlayerPanel(string panelName, Vector2 anchorMin, Vector2 anchorMax, Vector2 anchoredPos, string playerName, string cardCount, Color teamColor)
         {
             RectTransform panel = EnsureRectChild(playersHudRoot, panelName);
             panel.anchorMin = anchorMin;
@@ -422,6 +426,19 @@ namespace Pif.UI
                 avatarImage = avatar.gameObject.AddComponent<Image>();
             avatarImage.color = new Color(1f, 1f, 1f, 0.22f);
             avatarImage.raycastTarget = false;
+
+            RectTransform teamDot = EnsureRectChild(panel, "TeamDot");
+            teamDot.anchorMin = new Vector2(0f, 0.5f);
+            teamDot.anchorMax = new Vector2(0f, 0.5f);
+            teamDot.pivot = new Vector2(0f, 0.5f);
+            teamDot.sizeDelta = new Vector2(8f, 34f);
+            teamDot.anchoredPosition = new Vector2(0f, 0f);
+
+            Image dotImage = teamDot.GetComponent<Image>();
+            if (dotImage == null)
+                dotImage = teamDot.gameObject.AddComponent<Image>();
+            dotImage.color = teamColor;
+            dotImage.raycastTarget = false;
 
             RectTransform nameTextRect = EnsureRectChild(panel, "Name");
             nameTextRect.anchorMin = new Vector2(0f, 0.5f);
@@ -456,6 +473,74 @@ namespace Pif.UI
             cardsText.raycastTarget = false;
         }
 
+        private void ConfigureTopBar()
+        {
+            RectTransform topBar = EnsureRectChild(hudLayer, "TopBar");
+            topBar.anchorMin = new Vector2(safeMarginPercent, 1f - safeMarginPercent);
+            topBar.anchorMax = new Vector2(1f - safeMarginPercent, 1f - safeMarginPercent);
+            topBar.pivot = new Vector2(0.5f, 1f);
+            topBar.sizeDelta = new Vector2(0f, topBarHeight);
+            topBar.anchoredPosition = Vector2.zero;
+            topBar.SetSiblingIndex(2);
+
+            Image topBarBg = topBar.GetComponent<Image>();
+            if (topBarBg == null)
+                topBarBg = topBar.gameObject.AddComponent<Image>();
+            topBarBg.color = new Color(0f, 0f, 0f, 0.18f);
+            topBarBg.raycastTarget = false;
+
+            Text teamAText = EnsureTopBarLabel(topBar, "TeamAText", new Vector2(0f, 0f), new Vector2(0.4f, 1f), teamAColor, TextAnchor.MiddleLeft);
+            teamAText.text = "Dupla A: 0";
+
+            Text teamBText = EnsureTopBarLabel(topBar, "TeamBText", new Vector2(0.4f, 0f), new Vector2(0.8f, 1f), teamBColor, TextAnchor.MiddleCenter);
+            teamBText.text = "Dupla B: 0";
+
+            CreateTopBarButton(topBar, "ConfigButton", new Vector2(0.8f, 0f), new Vector2(0.9f, 1f), "Config");
+            CreateTopBarButton(topBar, "ExitButton", new Vector2(0.9f, 0f), new Vector2(1f, 1f), "Sair");
+        }
+
+        private Text EnsureTopBarLabel(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Color textColor, TextAnchor align)
+        {
+            RectTransform labelRect = EnsureRectChild(parent, name);
+            labelRect.anchorMin = anchorMin;
+            labelRect.anchorMax = anchorMax;
+            labelRect.offsetMin = new Vector2(12f, 0f);
+            labelRect.offsetMax = new Vector2(-12f, 0f);
+
+            Text label = labelRect.GetComponent<Text>();
+            if (label == null)
+                label = labelRect.gameObject.AddComponent<Text>();
+            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.fontSize = 15;
+            label.alignment = align;
+            label.color = textColor;
+            label.raycastTarget = false;
+            return label;
+        }
+
+        private void CreateTopBarButton(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string label)
+        {
+            RectTransform buttonRect = EnsureRectChild(parent, name);
+            buttonRect.anchorMin = anchorMin;
+            buttonRect.anchorMax = anchorMax;
+            buttonRect.offsetMin = new Vector2(6f, 10f);
+            buttonRect.offsetMax = new Vector2(-6f, -10f);
+
+            Image buttonImage = buttonRect.GetComponent<Image>();
+            if (buttonImage == null)
+                buttonImage = buttonRect.gameObject.AddComponent<Image>();
+            buttonImage.color = new Color(1f, 1f, 1f, 0.08f);
+            buttonImage.raycastTarget = true;
+
+            Button button = buttonRect.GetComponent<Button>();
+            if (button == null)
+                button = buttonRect.gameObject.AddComponent<Button>();
+            button.transition = Selectable.Transition.ColorTint;
+
+            Text text = EnsureTopBarLabel(buttonRect, "Label", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.9f), TextAnchor.MiddleCenter);
+            text.text = label;
+        }
+
         private void ConfigureHandLayoutPreset()
         {
             if (_handContainer == null)
@@ -470,6 +555,8 @@ namespace Pif.UI
                 preset = _handContainer.gameObject.AddComponent<HandFanLayoutPif>();
 
             preset.ApplyPreset();
+            if (handUI != null)
+                handUI.ApplyPifInteractionPreset();
         }
 
         private void EnsureOverlayDoesNotBlockRaycast()
