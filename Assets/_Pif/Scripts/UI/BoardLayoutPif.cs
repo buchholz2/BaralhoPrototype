@@ -21,21 +21,24 @@ namespace Pif.UI
         [SerializeField] private HandUI handUI;
 
         [Header("Layout")]
-        [SerializeField, Range(0f, 0.2f)] private float safeMarginPercent = 0.06f;
-        [SerializeField, Range(0f, 0.4f)] private float handBandMaxY = 0.22f;
+        [SerializeField, Range(0f, 0.2f)] private float safeMarginPercent = 0.04f;
+        [SerializeField, Range(0f, 0.4f)] private float handBandMaxY = 0.24f;
+        [SerializeField, Range(0.06f, 0.16f)] private float topBarHeightPercent = 0.09f;
+        [SerializeField, Range(0.12f, 0.2f)] private float sideBandWidthPercent = 0.15f;
+        [SerializeField, Range(0f, 0.06f)] private float playfieldPaddingPercent = 0.02f;
         [SerializeField, Range(0.3f, 0.7f)] private float centerYNormalized = 0.55f;
         [SerializeField] private float centerSlotsSpacing = 340f;
-        [SerializeField] private float centerSlotsVerticalOffset = 42f;
+        [SerializeField] private float centerSlotsVerticalOffset = 76f;
         [SerializeField] private float handPeekOffset = -150f;
         [SerializeField] private Vector2 centerPileSize = new Vector2(160f, 230f);
 
         [Header("Zone Style")]
         [SerializeField] private Color zoneColor = Color.white;
         [SerializeField] private float zoneCornerRadius = 28f;
-        [SerializeField, Range(8, 24)] private int zoneCornerSegments = 16;
-        [SerializeField] private float zoneStrokeWidth = 0.8f;
-        [SerializeField, Range(0f, 1f)] private float zoneStrokeOpacity = 0.16f;
-        [SerializeField, Range(0f, 1f)] private float zoneFillOpacity = 0.04f;
+        [SerializeField, Range(8, 24)] private int zoneCornerSegments = 18;
+        [SerializeField] private float zoneStrokeWidth = 0.45f;
+        [SerializeField, Range(0f, 1f)] private float zoneStrokeOpacity = 0.14f;
+        [SerializeField, Range(0f, 1f)] private float zoneFillOpacity = 0.015f;
         [SerializeField] private bool showZonesDebug;
         [SerializeField] private bool enforceMsaa = true;
         [SerializeField, Range(0, 8)] private int targetMsaa = 4;
@@ -50,7 +53,6 @@ namespace Pif.UI
         [SerializeField] private Color panelFillColor = new Color(0f, 0f, 0f, 0.9f);
         [SerializeField] private float panelFillOpacity = 0.36f;
         [SerializeField] private float panelStrokeOpacity = 0.15f;
-        [SerializeField] private float topBarHeight = 56f;
         [SerializeField] private Color teamAColor = new Color(0.29f, 0.56f, 0.95f, 0.95f);
         [SerializeField] private Color teamBColor = new Color(0.95f, 0.65f, 0.24f, 0.95f);
         [SerializeField] private Color sortAccentColor = new Color(0.96f, 0.82f, 0.44f, 1f);
@@ -63,6 +65,7 @@ namespace Pif.UI
         [SerializeField] private RectTransform dragLayer;
         [SerializeField] private RectTransform hudLayer;
         [SerializeField] private RectTransform safeAreaRoot;
+        [SerializeField] private RectTransform hudSafeAreaRoot;
         [SerializeField] private RectTransform actionPanel;
         [SerializeField] private RectTransform playersHudRoot;
 
@@ -147,8 +150,10 @@ namespace Pif.UI
             if (mainCanvas == null)
                 return;
 
+            ConfigureCanvasScaler();
             BuildLayers();
             CleanupGeneratedHierarchy();
+            RemoveLegacyStandaloneUi();
             CacheLegacyObjects();
             ReparentLegacyObjects();
             ConfigureBootstrapFlags();
@@ -185,8 +190,14 @@ namespace Pif.UI
 
             if (hudLayer != null)
             {
-                HashSet<string> hudAllowed = new HashSet<string> { "PlayersHUD", "TopBar", "ActionPanel", "SortButtons", "DebugToggle" };
+                HashSet<string> hudAllowed = new HashSet<string> { "SafeArea" };
                 RemoveUnexpectedChildren(hudLayer, hudAllowed);
+            }
+
+            if (hudSafeAreaRoot != null)
+            {
+                HashSet<string> hudSafeAllowed = new HashSet<string> { "PlayersHUD", "TopBar", "ActionPanel", "DebugToggle" };
+                RemoveUnexpectedChildren(hudSafeAreaRoot, hudSafeAllowed);
             }
         }
 
@@ -237,6 +248,41 @@ namespace Pif.UI
                 handUI = FindFirstObjectByType<HandUI>(FindObjectsInactive.Include);
         }
 
+        private void ConfigureCanvasScaler()
+        {
+            if (mainCanvas == null)
+                return;
+
+            CanvasScaler scaler = mainCanvas.GetComponent<CanvasScaler>();
+            if (scaler == null)
+                scaler = mainCanvas.gameObject.AddComponent<CanvasScaler>();
+
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        private void RemoveLegacyStandaloneUi()
+        {
+            DestroyLegacyObject("SortButtons");
+            DestroyLegacyObject("PlayerHUD");
+            DestroyLegacyObject("PlayersHUDRoot");
+            DestroyLegacyObject("SortPanel");
+        }
+
+        private void DestroyLegacyObject(string objectName)
+        {
+            Transform target = FindDeepChild(objectName);
+            if (target == null)
+                return;
+
+            if (hudSafeAreaRoot != null && target.IsChildOf(hudSafeAreaRoot))
+                return;
+
+            DestroyImmediateSafe(target.gameObject);
+        }
+
         private void BuildLayers()
         {
             RectTransform canvasRect = mainCanvas.transform as RectTransform;
@@ -261,6 +307,11 @@ namespace Pif.UI
             SetAnchorRect(safeAreaRoot, new Vector2(safeMarginPercent, safeMarginPercent), new Vector2(1f - safeMarginPercent, 1f - safeMarginPercent));
             safeAreaRoot.offsetMin = Vector2.zero;
             safeAreaRoot.offsetMax = Vector2.zero;
+
+            hudSafeAreaRoot = EnsureRectChild(hudLayer, "SafeArea");
+            SetAnchorRect(hudSafeAreaRoot, new Vector2(safeMarginPercent, safeMarginPercent), new Vector2(1f - safeMarginPercent, 1f - safeMarginPercent));
+            hudSafeAreaRoot.offsetMin = Vector2.zero;
+            hudSafeAreaRoot.offsetMax = Vector2.zero;
         }
 
         private void CacheLegacyObjects()
@@ -270,7 +321,7 @@ namespace Pif.UI
             _discardPile = FindRect("DiscardPile");
             _handPanel = FindRect("HandPanel");
             _handContainer = FindRect("HandContainer");
-            _sortButtons = FindRect("SortButtons");
+            _sortButtons = null;
         }
 
         private void ReparentLegacyObjects()
@@ -278,7 +329,6 @@ namespace Pif.UI
             ReparentToLayer("TableBackground", tableBgLayer);
             ReparentToLayer("TableCenter", cardsLayer);
             ReparentToLayer("HandPanel", cardsLayer);
-            ReparentToLayer("SortButtons", hudLayer);
         }
 
         private void ConfigureBootstrapFlags()
@@ -310,11 +360,19 @@ namespace Pif.UI
             StretchFull(zonesRoot);
             CleanupZoneHierarchy(zonesRoot);
 
-            _playFieldZone = EnsureZone(zonesRoot, "PlayFieldZone", PifDropZoneType.MeldCenter, new Vector2(0.20f, 0.26f), new Vector2(0.80f, 0.74f));
-            _northZone = EnsureZone(zonesRoot, "NorthZone", PifDropZoneType.MeldNorth, new Vector2(0.20f, 0.84f), new Vector2(0.80f, 1.00f));
-            _westZone = EnsureZone(zonesRoot, "WestZone", PifDropZoneType.MeldWest, new Vector2(0.00f, 0.26f), new Vector2(0.14f, 0.74f));
-            _eastZone = EnsureZone(zonesRoot, "EastZone", PifDropZoneType.MeldEast, new Vector2(0.86f, 0.26f), new Vector2(1.00f, 0.74f));
-            _handZone = EnsureZone(zonesRoot, "HandZone", PifDropZoneType.Hand, new Vector2(0.14f, 0.00f), new Vector2(0.86f, handBandMaxY));
+            float side = Mathf.Clamp(sideBandWidthPercent, 0.12f, 0.2f);
+            float topBandBottom = Mathf.Clamp01(1f - topBarHeightPercent);
+            float bottomBandTop = Mathf.Clamp01(handBandMaxY);
+            float paddedLeft = Mathf.Clamp01(side + playfieldPaddingPercent);
+            float paddedRight = Mathf.Clamp01(1f - side - playfieldPaddingPercent);
+            float paddedBottom = Mathf.Clamp01(bottomBandTop + playfieldPaddingPercent);
+            float paddedTop = Mathf.Clamp01(topBandBottom - playfieldPaddingPercent);
+
+            _playFieldZone = EnsureZone(zonesRoot, "PlayFieldZone", PifDropZoneType.MeldCenter, new Vector2(paddedLeft, paddedBottom), new Vector2(paddedRight, paddedTop));
+            _northZone = EnsureZone(zonesRoot, "NorthZone", PifDropZoneType.MeldNorth, new Vector2(paddedLeft, topBandBottom), new Vector2(paddedRight, 1f));
+            _westZone = EnsureZone(zonesRoot, "WestZone", PifDropZoneType.MeldWest, new Vector2(0f, paddedBottom), new Vector2(side, paddedTop));
+            _eastZone = EnsureZone(zonesRoot, "EastZone", PifDropZoneType.MeldEast, new Vector2(1f - side, paddedBottom), new Vector2(1f, paddedTop));
+            _handZone = EnsureZone(zonesRoot, "HandZone", PifDropZoneType.Hand, new Vector2(side, 0f), new Vector2(1f - side, bottomBandTop));
 
             _drawSlotZone = EnsureZone(_playFieldZone, "DrawSlot", PifDropZoneType.DrawPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
             _discardSlotZone = EnsureZone(_playFieldZone, "DiscardSlot", PifDropZoneType.DiscardPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
@@ -375,20 +433,11 @@ namespace Pif.UI
 
         private void ConfigureCardsLayout()
         {
-            if (_tableCenter != null)
-            {
-                _tableCenter.SetParent(cardsLayer, false);
-                _tableCenter.anchorMin = new Vector2(0.5f, centerYNormalized);
-                _tableCenter.anchorMax = new Vector2(0.5f, centerYNormalized);
-                _tableCenter.pivot = new Vector2(0.5f, 0.5f);
-                _tableCenter.sizeDelta = new Vector2(540f, 280f);
-                _tableCenter.anchoredPosition = Vector2.zero;
-            }
-
             if (_drawPile != null)
             {
-                _drawPile.anchorMin = new Vector2(0.5f, 0.5f);
-                _drawPile.anchorMax = new Vector2(0.5f, 0.5f);
+                _drawPile.SetParent(cardsLayer, false);
+                _drawPile.anchorMin = new Vector2(0.5f, centerYNormalized);
+                _drawPile.anchorMax = new Vector2(0.5f, centerYNormalized);
                 _drawPile.pivot = new Vector2(0.5f, 0.5f);
                 _drawPile.sizeDelta = centerPileSize;
                 _drawPile.anchoredPosition = new Vector2(-centerSlotsSpacing * 0.5f, centerSlotsVerticalOffset);
@@ -396,12 +445,16 @@ namespace Pif.UI
 
             if (_discardPile != null)
             {
-                _discardPile.anchorMin = new Vector2(0.5f, 0.5f);
-                _discardPile.anchorMax = new Vector2(0.5f, 0.5f);
+                _discardPile.SetParent(cardsLayer, false);
+                _discardPile.anchorMin = new Vector2(0.5f, centerYNormalized);
+                _discardPile.anchorMax = new Vector2(0.5f, centerYNormalized);
                 _discardPile.pivot = new Vector2(0.5f, 0.5f);
                 _discardPile.sizeDelta = centerPileSize;
                 _discardPile.anchoredPosition = new Vector2(centerSlotsSpacing * 0.5f, centerSlotsVerticalOffset);
             }
+
+            if (_tableCenter != null)
+                _tableCenter.gameObject.SetActive(false);
 
             if (_handPanel != null)
             {
@@ -433,7 +486,7 @@ namespace Pif.UI
 
         private void ConfigureActionPanel()
         {
-            actionPanel = EnsureRectChild(hudLayer, "ActionPanel");
+            actionPanel = EnsureRectChild(hudSafeAreaRoot, "ActionPanel");
             actionPanel.anchorMin = new Vector2(1f, 0f);
             actionPanel.anchorMax = new Vector2(1f, 0f);
             actionPanel.pivot = new Vector2(1f, 0f);
@@ -444,46 +497,72 @@ namespace Pif.UI
 
         private void ConfigurePlayersHud()
         {
-            playersHudRoot = EnsureRectChild(hudLayer, "PlayersHUD");
+            playersHudRoot = EnsureRectChild(hudSafeAreaRoot, "PlayersHUD");
             StretchFull(playersHudRoot);
             playersHudRoot.SetSiblingIndex(0);
 
-            float southY = Mathf.Max(14f, mainCanvas.pixelRect.height * 0.02f);
+            HashSet<string> panelNames = new HashSet<string>
+            {
+                "PlayerMainPanel",
+                "PlayerNorthPanel",
+                "PlayerWestPanel",
+                "PlayerEastPanel"
+            };
+            RemoveUnexpectedChildren(playersHudRoot, panelNames);
+
+            float safeWidth = mainCanvas != null
+                ? Mathf.Max(640f, mainCanvas.pixelRect.width * (1f - safeMarginPercent * 2f))
+                : 1920f;
+            float safeHeight = mainCanvas != null
+                ? Mathf.Max(360f, mainCanvas.pixelRect.height * (1f - safeMarginPercent * 2f))
+                : 1080f;
+
+            Vector2 mainPanelDynamicSize = new Vector2(
+                Mathf.Clamp(safeWidth * 0.24f, 320f, 460f),
+                Mathf.Clamp(safeHeight * 0.12f, 104f, 136f));
+            Vector2 opponentDynamicSize = new Vector2(
+                Mathf.Clamp(safeWidth * 0.13f, 184f, 260f),
+                Mathf.Clamp(safeHeight * 0.07f, 56f, 76f));
+
+            float playfieldTopY = Mathf.Clamp01(1f - topBarHeightPercent - playfieldPaddingPercent);
+            float playfieldCenterY = Mathf.Lerp(handBandMaxY, playfieldTopY, 0.5f);
+            float sideInset = Mathf.Max(12f, safeWidth * 0.012f);
+            float bottomInset = Mathf.Max(12f, safeHeight * 0.015f);
 
             RectTransform mainPanel = EnsureHudPanel(
-                "PlayerSouthHUD",
+                "PlayerMainPanel",
                 new Vector2(0f, 0f),
                 new Vector2(0f, 0f),
                 new Vector2(0f, 0f),
-                mainPlayerPanelSize,
-                new Vector2(18f, southY));
+                mainPanelDynamicSize,
+                new Vector2(sideInset, bottomInset));
             ConfigureMainPlayerPanel(mainPanel, "Voce", teamAColor);
 
             RectTransform northPanel = EnsureHudPanel(
-                "PlayerNorthHUD",
+                "PlayerNorthPanel",
+                new Vector2(0.5f, 1f - topBarHeightPercent),
+                new Vector2(0.5f, 1f - topBarHeightPercent),
                 new Vector2(0.5f, 1f),
-                new Vector2(0.5f, 1f),
-                new Vector2(0.5f, 1f),
-                opponentPanelSize,
-                new Vector2(0f, -18f));
+                opponentDynamicSize,
+                new Vector2(0f, -12f));
             _northPlayerCardsText = ConfigureOpponentPanel(northPanel, "Oponente Norte", teamAColor);
 
             RectTransform westPanel = EnsureHudPanel(
-                "PlayerWestHUD",
+                "PlayerWestPanel",
+                new Vector2(0f, playfieldCenterY),
+                new Vector2(0f, playfieldCenterY),
                 new Vector2(0f, 0.5f),
-                new Vector2(0f, 0.5f),
-                new Vector2(0f, 0.5f),
-                opponentPanelSize,
-                new Vector2(18f, 0f));
+                opponentDynamicSize,
+                new Vector2(sideInset, 0f));
             _westPlayerCardsText = ConfigureOpponentPanel(westPanel, "Oponente Oeste", teamBColor);
 
             RectTransform eastPanel = EnsureHudPanel(
-                "PlayerEastHUD",
+                "PlayerEastPanel",
+                new Vector2(1f, playfieldCenterY),
+                new Vector2(1f, playfieldCenterY),
                 new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                new Vector2(1f, 0.5f),
-                opponentPanelSize,
-                new Vector2(-18f, 0f));
+                opponentDynamicSize,
+                new Vector2(-sideInset, 0f));
             _eastPlayerCardsText = ConfigureOpponentPanel(eastPanel, "Oponente Leste", teamBColor);
         }
 
@@ -502,7 +581,7 @@ namespace Pif.UI
 
         private void ConfigureMainPlayerPanel(RectTransform panel, string playerName, Color teamColor)
         {
-            EnsureTeamStripe(panel, teamColor, new Vector2(8f, 0f), panel.rect.height - 14f, 6f);
+            EnsureTeamStripe(panel, teamColor, new Vector2(6f, 0f), panel.rect.height - 14f, 4f, 0.68f);
             EnsureAvatar(panel, new Vector2(18f, 0f), 42f, 0.28f);
 
             RectTransform nameRect = EnsureRectChild(panel, "Name");
@@ -545,7 +624,7 @@ namespace Pif.UI
             labelRect.pivot = new Vector2(0f, 0.5f);
             labelRect.sizeDelta = new Vector2(72f, 0f);
             labelRect.anchoredPosition = new Vector2(12f, 0f);
-            EnsureText(labelRect, "Ordenar:", 13, new Color(1f, 1f, 1f, 0.82f), TextAnchor.MiddleLeft);
+            EnsureText(labelRect, "Ordenar", 13, new Color(1f, 1f, 1f, 0.82f), TextAnchor.MiddleLeft);
 
             RectTransform controlsHost = EnsureRectChild(sortRow, "SortControlsHost");
             controlsHost.anchorMin = new Vector2(0f, 0f);
@@ -558,7 +637,7 @@ namespace Pif.UI
 
         private Text ConfigureOpponentPanel(RectTransform panel, string playerName, Color teamColor)
         {
-            EnsureTeamStripe(panel, teamColor, new Vector2(7f, 0f), panel.rect.height - 12f, 5f);
+            EnsureTeamStripe(panel, teamColor, new Vector2(6f, 0f), panel.rect.height - 12f, 3f, 0.56f);
             EnsureAvatar(panel, new Vector2(16f, 0f), 28f, 0.22f);
 
             RectTransform nameRect = EnsureRectChild(panel, "Name");
@@ -578,11 +657,18 @@ namespace Pif.UI
 
         private void ConfigureSortControls(RectTransform host)
         {
-            _sortButtons ??= EnsureRectChild(host, "SortButtons");
+            if (_sortButtons != null && _sortButtons.name != "SortWidget")
+            {
+                DestroyImmediateSafe(_sortButtons.gameObject);
+                _sortButtons = null;
+            }
+
+            _sortButtons ??= EnsureRectChild(host, "SortWidget");
             _sortButtons.SetParent(host, false);
             StretchFull(_sortButtons);
             _sortButtons.offsetMin = Vector2.zero;
             _sortButtons.offsetMax = Vector2.zero;
+            RemoveUnexpectedChildren(_sortButtons, new HashSet<string> { "SortBySuit", "SortByNumber" });
 
             HorizontalLayoutGroup layout = _sortButtons.GetComponent<HorizontalLayoutGroup>();
             if (layout == null)
@@ -715,7 +801,7 @@ namespace Pif.UI
             return graphic;
         }
 
-        private void EnsureTeamStripe(RectTransform panel, Color color, Vector2 anchoredPos, float height, float width)
+        private void EnsureTeamStripe(RectTransform panel, Color color, Vector2 anchoredPos, float height, float width, float alpha)
         {
             RectTransform teamStripe = EnsureRectChild(panel, "TeamStripe");
             teamStripe.anchorMin = new Vector2(0f, 0.5f);
@@ -727,7 +813,7 @@ namespace Pif.UI
             Image stripeImage = teamStripe.GetComponent<Image>();
             if (stripeImage == null)
                 stripeImage = teamStripe.gameObject.AddComponent<Image>();
-            stripeImage.color = color;
+            stripeImage.color = new Color(color.r, color.g, color.b, Mathf.Clamp01(alpha));
             stripeImage.raycastTarget = false;
         }
 
@@ -763,28 +849,55 @@ namespace Pif.UI
 
         private void ConfigureTopBar()
         {
-            RectTransform topBar = EnsureRectChild(hudLayer, "TopBar");
-            topBar.anchorMin = new Vector2(safeMarginPercent, 1f - safeMarginPercent);
-            topBar.anchorMax = new Vector2(1f - safeMarginPercent, 1f - safeMarginPercent);
+            RectTransform topBar = EnsureRectChild(hudSafeAreaRoot, "TopBar");
+            topBar.anchorMin = new Vector2(0f, 1f);
+            topBar.anchorMax = new Vector2(1f, 1f);
             topBar.pivot = new Vector2(0.5f, 1f);
-            topBar.sizeDelta = new Vector2(0f, topBarHeight);
+            float safeHeight = mainCanvas != null
+                ? Mathf.Max(360f, mainCanvas.pixelRect.height * (1f - safeMarginPercent * 2f))
+                : 1080f;
+            float computedHeight = Mathf.Clamp(safeHeight * topBarHeightPercent, 54f, 108f);
+            topBar.sizeDelta = new Vector2(0f, computedHeight);
             topBar.anchoredPosition = Vector2.zero;
             topBar.SetSiblingIndex(2);
+            EnsurePanelChrome(topBar, 18f, 0.28f, 0.14f);
 
-            Image topBarBg = topBar.GetComponent<Image>();
-            if (topBarBg == null)
-                topBarBg = topBar.gameObject.AddComponent<Image>();
-            topBarBg.color = new Color(0f, 0f, 0f, 0.18f);
-            topBarBg.raycastTarget = false;
+            HashSet<string> allowed = new HashSet<string> { "LeftRegion", "CenterRegion", "RightRegion", "PanelFill", "PanelStroke" };
+            RemoveUnexpectedChildren(topBar, allowed);
 
-            Text teamAText = EnsureTopBarLabel(topBar, "TeamAText", new Vector2(0f, 0f), new Vector2(0.4f, 1f), teamAColor, TextAnchor.MiddleLeft);
-            teamAText.text = "Dupla A: 0";
+            RectTransform leftRegion = EnsureRectChild(topBar, "LeftRegion");
+            leftRegion.anchorMin = new Vector2(0f, 0f);
+            leftRegion.anchorMax = new Vector2(0.26f, 1f);
+            leftRegion.offsetMin = new Vector2(12f, 0f);
+            leftRegion.offsetMax = new Vector2(-8f, 0f);
+            EnsureTopBarLabel(leftRegion, "StatusLabel", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.62f), TextAnchor.MiddleLeft).text = "Sala PIF";
 
-            Text teamBText = EnsureTopBarLabel(topBar, "TeamBText", new Vector2(0.4f, 0f), new Vector2(0.8f, 1f), teamBColor, TextAnchor.MiddleCenter);
-            teamBText.text = "Dupla B: 0";
+            RectTransform centerRegion = EnsureRectChild(topBar, "CenterRegion");
+            centerRegion.anchorMin = new Vector2(0.26f, 0f);
+            centerRegion.anchorMax = new Vector2(0.74f, 1f);
+            centerRegion.offsetMin = new Vector2(8f, 0f);
+            centerRegion.offsetMax = new Vector2(-8f, 0f);
+            EnsureTopBarLabel(centerRegion, "ScoreboardLabel", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.94f), TextAnchor.MiddleCenter).text = "<color=#6EA9FF>Dupla A: 0</color>   |   <color=#F2A95B>Dupla B: 0</color>";
 
-            CreateTopBarButton(topBar, "ConfigButton", new Vector2(0.8f, 0f), new Vector2(0.9f, 1f), "Config");
-            CreateTopBarButton(topBar, "ExitButton", new Vector2(0.9f, 0f), new Vector2(1f, 1f), "Sair");
+            RectTransform rightRegion = EnsureRectChild(topBar, "RightRegion");
+            rightRegion.anchorMin = new Vector2(0.74f, 0f);
+            rightRegion.anchorMax = new Vector2(1f, 1f);
+            rightRegion.offsetMin = new Vector2(8f, 10f);
+            rightRegion.offsetMax = new Vector2(-10f, -10f);
+
+            HorizontalLayoutGroup row = rightRegion.GetComponent<HorizontalLayoutGroup>();
+            if (row == null)
+                row = rightRegion.gameObject.AddComponent<HorizontalLayoutGroup>();
+            row.childAlignment = TextAnchor.MiddleRight;
+            row.childControlWidth = false;
+            row.childControlHeight = true;
+            row.childForceExpandWidth = false;
+            row.childForceExpandHeight = false;
+            row.spacing = 8f;
+            row.padding = new RectOffset(0, 0, 0, 0);
+
+            CreateTopBarButton(rightRegion, "ConfigButton", "Config");
+            CreateTopBarButton(rightRegion, "ExitButton", "Sair");
         }
 
         private Text EnsureTopBarLabel(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Color textColor, TextAnchor align)
@@ -792,8 +905,8 @@ namespace Pif.UI
             RectTransform labelRect = EnsureRectChild(parent, name);
             labelRect.anchorMin = anchorMin;
             labelRect.anchorMax = anchorMax;
-            labelRect.offsetMin = new Vector2(12f, 0f);
-            labelRect.offsetMax = new Vector2(-12f, 0f);
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
 
             Text label = labelRect.GetComponent<Text>();
             if (label == null)
@@ -835,13 +948,20 @@ namespace Pif.UI
             return s_runtimeFont;
         }
 
-        private void CreateTopBarButton(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string label)
+        private void CreateTopBarButton(RectTransform parent, string name, string label)
         {
             RectTransform buttonRect = EnsureRectChild(parent, name);
-            buttonRect.anchorMin = anchorMin;
-            buttonRect.anchorMax = anchorMax;
-            buttonRect.offsetMin = new Vector2(6f, 10f);
-            buttonRect.offsetMax = new Vector2(-6f, -10f);
+            buttonRect.anchorMin = new Vector2(1f, 0.5f);
+            buttonRect.anchorMax = new Vector2(1f, 0.5f);
+            buttonRect.pivot = new Vector2(1f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(92f, 34f);
+
+            LayoutElement element = buttonRect.GetComponent<LayoutElement>();
+            if (element == null)
+                element = buttonRect.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = 92f;
+            element.minWidth = 92f;
+            element.preferredHeight = 34f;
 
             Image buttonImage = buttonRect.GetComponent<Image>();
             if (buttonImage == null)
@@ -853,9 +973,18 @@ namespace Pif.UI
             if (button == null)
                 button = buttonRect.gameObject.AddComponent<Button>();
             button.transition = Selectable.Transition.ColorTint;
+            ColorBlock colors = button.colors;
+            colors.normalColor = new Color(1f, 1f, 1f, 0.08f);
+            colors.highlightedColor = new Color(1f, 1f, 1f, 0.13f);
+            colors.pressedColor = new Color(1f, 1f, 1f, 0.18f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.disabledColor = new Color(1f, 1f, 1f, 0.04f);
+            colors.fadeDuration = 0.08f;
+            button.colors = colors;
 
             Text text = EnsureTopBarLabel(buttonRect, "Label", Vector2.zero, Vector2.one, new Color(1f, 1f, 1f, 0.9f), TextAnchor.MiddleCenter);
             text.text = label;
+            EnsurePanelChrome(buttonRect, 10f, 0.2f, 0.14f);
         }
 
         private void RefreshSortPillVisuals()
@@ -1009,16 +1138,16 @@ namespace Pif.UI
 
         private void ApplyZoneStyle()
         {
-            float strokeAlpha = showZonesDebug ? Mathf.Max(zoneStrokeOpacity, 0.6f) : zoneStrokeOpacity;
-            float fillAlpha = showZonesDebug ? Mathf.Max(zoneFillOpacity, 0.11f) : zoneFillOpacity;
+            float strokeAlpha = showZonesDebug ? Mathf.Max(zoneStrokeOpacity, 0.45f) : zoneStrokeOpacity;
+            float fillAlpha = showZonesDebug ? Mathf.Max(zoneFillOpacity, 0.12f) : zoneFillOpacity;
 
             ApplyStyle(_playFieldZone, strokeAlpha, fillAlpha);
-            ApplyStyle(_northZone, strokeAlpha, fillAlpha * 0.7f);
-            ApplyStyle(_westZone, strokeAlpha, fillAlpha * 0.7f);
-            ApplyStyle(_eastZone, strokeAlpha, fillAlpha * 0.7f);
-            ApplyStyle(_handZone, strokeAlpha, fillAlpha * 0.7f);
+            ApplyStyle(_northZone, strokeAlpha * 0.84f, fillAlpha * 0.55f);
+            ApplyStyle(_westZone, strokeAlpha * 0.84f, fillAlpha * 0.55f);
+            ApplyStyle(_eastZone, strokeAlpha * 0.84f, fillAlpha * 0.55f);
+            ApplyStyle(_handZone, strokeAlpha * 0.84f, fillAlpha * 0.55f);
 
-            float slotStroke = Mathf.Clamp01(strokeAlpha + 0.08f);
+            float slotStroke = Mathf.Clamp01(strokeAlpha + 0.06f);
             ApplyStyle(_drawSlotZone, slotStroke, 0f);
             ApplyStyle(_discardSlotZone, slotStroke, 0f);
             ApplyStyle(_viraSlotZone, slotStroke, 0f);
