@@ -1,12 +1,14 @@
-using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using DG.Tweening;
+using System;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 /// <summary>
-/// Componente de carta UI com suporte a interação (clique, drag, hover)
+/// Componente de carta UI com suporte a interacao (clique, drag, hover)
 /// </summary>
-public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
+public class CardView : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [SerializeField] private Image image;
 
@@ -29,9 +31,12 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
 
     private bool _dragging;
     private bool _animating;
+    private bool _isInHoverLayer;
+    private bool _originalHierarchyCaptured;
     private Vector2 _dragStartScreen;
     private Vector2 _dragOffsetLocal;
     private int _origSibling;
+    private Transform _origParent;
 
     public bool IsDragging => _dragging;
     public bool IsAnimating => _animating;
@@ -46,7 +51,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
             Debug.LogError($"CardView '{gameObject.name}' precisa de um RectTransform!");
             return;
         }
-        
+
         if (image == null) image = GetComponent<Image>();
         if (image != null) image.preserveAspect = true;
 
@@ -54,6 +59,11 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
         if (_group == null) _group = gameObject.AddComponent<CanvasGroup>();
 
         _hover = GetComponent<CardHoverFX>();
+    }
+
+    private void OnDisable()
+    {
+        RestoreOriginalHierarchy(restoreSibling: false);
     }
 
     public void Bind(HandUI owner, Card card)
@@ -70,11 +80,8 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
     }
 
     /// <summary>
-    /// Configura os sprites de frente e verso da carta
+    /// Configura os sprites de frente e verso da carta.
     /// </summary>
-    /// <param name="backSprite">Sprite do verso</param>
-    /// <param name="faceSprite">Sprite da frente</param>
-    /// <param name="startFaceUp">Se deve começar virada para cima</param>
     public void Init(Sprite backSprite, Sprite faceSprite, bool startFaceUp)
     {
         _back = backSprite;
@@ -84,7 +91,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
     }
 
     /// <summary>
-    /// Alterna entre mostrar frente ou verso da carta
+    /// Alterna entre mostrar frente ou verso da carta.
     /// </summary>
     public void Toggle()
     {
@@ -93,7 +100,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
     }
 
     /// <summary>
-    /// Define se a carta está virada para cima ou para baixo
+    /// Define se a carta esta virada para cima ou para baixo.
     /// </summary>
     public void SetFaceUp(bool value)
     {
@@ -108,19 +115,50 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
     }
 
     /// <summary>
-    /// Define se a carta está em estado de animação (bloqueia layout)
+    /// Define se a carta esta em estado de animacao (bloqueia layout).
     /// </summary>
     public void SetAnimating(bool value)
     {
         _animating = value;
         if (_hover != null)
             _hover.SetSuppressed(value);
+
+        if (_animating)
+            RestoreOriginalHierarchy(restoreSibling: true);
     }
 
     public void OnPointerClick(PointerEventData eventData)
     {
         if (_dragging || _animating) return;
         Toggle();
+    }
+
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (_animating || _dragging || _rt == null)
+            return;
+
+        if (!TryGetLayering(out RectTransform hoverLayer, out _))
+            return;
+
+        if (hoverLayer == null || _isInHoverLayer)
+            return;
+
+        CaptureOriginalHierarchy();
+        MoveToLayer(hoverLayer);
+        _isInHoverLayer = true;
+
+        if (_hover != null)
+            _hover.bringToFrontOnHover = false;
+    }
+
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        if (_dragging || _animating)
+            return;
+
+        if (_isInHoverLayer)
+            RestoreOriginalHierarchy(restoreSibling: true);
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -133,8 +171,24 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
         }
 
         _dragging = true;
-        _origSibling = _rt.GetSiblingIndex();
-        _rt.SetAsLastSibling();
+
+        if (_originalHierarchyCaptured)
+            _origSibling = _origSibling >= 0 ? _origSibling : _rt.GetSiblingIndex();
+        else
+            _origSibling = _rt.GetSiblingIndex();
+
+        if (!_originalHierarchyCaptured)
+            CaptureOriginalHierarchy();
+
+        if (TryGetLayering(out _, out RectTransform dragLayer) && dragLayer != null)
+        {
+            MoveToLayer(dragLayer);
+            _isInHoverLayer = false;
+        }
+        else
+        {
+            _rt.SetAsLastSibling();
+        }
 
         _dragStartScreen = eventData.position;
 
@@ -152,7 +206,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
 
         if (_group != null)
             _group.blocksRaycasts = false;
-            
+
         if (_hover != null)
             _hover.SetSuppressed(true);
 
@@ -166,7 +220,7 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
     public void OnDrag(PointerEventData eventData)
     {
         if (_rt == null) return;
-        
+
         var parent = _rt.parent as RectTransform;
         if (parent == null) return;
 
@@ -189,6 +243,12 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
         if (_owner != null && _owner.IsDiscardPoint(eventData.position, eventData.pressEventCamera))
             discard = true;
 
+        Vector2 releaseLocal = _rt != null ? _rt.anchoredPosition : Vector2.zero;
+        if (_owner != null && _rt != null)
+            releaseLocal = _owner.WorldToLocalInContainer(_rt.position, eventData.pressEventCamera);
+
+        RestoreOriginalHierarchy(restoreSibling: true);
+
         if (_owner == null)
         {
             _dragging = false;
@@ -204,7 +264,6 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
 
         if (discard)
         {
-            var releaseLocal = _rt != null ? _rt.anchoredPosition : Vector2.zero;
             SetAnimating(true); // trava layout antes do descarte
             _dragging = false;
             _owner.DiscardCard(this, releaseLocal, eventData.pressEventCamera);
@@ -216,5 +275,110 @@ public class CardView : MonoBehaviour, IPointerClickHandler, IBeginDragHandler, 
                 _hover.SetSuppressed(false);
             _owner.ReturnCard(this, _origSibling);
         }
+    }
+
+    private bool TryGetLayering(out RectTransform hoverLayer, out RectTransform dragLayer)
+    {
+        hoverLayer = null;
+        dragLayer = null;
+
+        return PifUiBridge.TryGetLayers(out hoverLayer, out dragLayer);
+    }
+
+    private void CaptureOriginalHierarchy()
+    {
+        if (_rt == null || _originalHierarchyCaptured)
+            return;
+
+        _origParent = _rt.parent;
+        _origSibling = _rt.GetSiblingIndex();
+        _originalHierarchyCaptured = _origParent != null;
+    }
+
+    private void MoveToLayer(RectTransform layer)
+    {
+        if (_rt == null || layer == null)
+            return;
+
+        Vector3 worldPos = _rt.position;
+        Quaternion worldRot = _rt.rotation;
+        _rt.SetParent(layer, true);
+        _rt.position = worldPos;
+        _rt.rotation = worldRot;
+        _rt.SetAsLastSibling();
+    }
+
+    private void RestoreOriginalHierarchy(bool restoreSibling)
+    {
+        if (_rt == null || !_originalHierarchyCaptured || _origParent == null)
+            return;
+
+        _rt.SetParent(_origParent, true);
+        if (restoreSibling)
+        {
+            int sibling = Mathf.Clamp(_origSibling, 0, Mathf.Max(0, _origParent.childCount - 1));
+            _rt.SetSiblingIndex(sibling);
+        }
+
+        _origParent = null;
+        _origSibling = -1;
+        _originalHierarchyCaptured = false;
+        _isInHoverLayer = false;
+    }
+}
+
+internal static class PifUiBridge
+{
+    private const string RegistryTypeName = "Pif.UI.PifUiLayerRegistry";
+    private static Type s_registryType;
+    private static MethodInfo s_tryGetLayers;
+
+    public static bool TryGetLayers(out RectTransform hoverLayer, out RectTransform dragLayer)
+    {
+        hoverLayer = null;
+        dragLayer = null;
+
+        EnsureReflectionCache();
+        if (s_tryGetLayers == null)
+            return false;
+
+        object[] args = { null, null };
+        object result = s_tryGetLayers.Invoke(null, args);
+        bool hasRegistry = result is bool b && b;
+
+        hoverLayer = args[0] as RectTransform;
+        dragLayer = args[1] as RectTransform;
+
+        return hasRegistry && (hoverLayer != null || dragLayer != null);
+    }
+
+    public static bool HasLayering
+    {
+        get
+        {
+            if (!TryGetLayers(out RectTransform hoverLayer, out RectTransform dragLayer))
+                return false;
+
+            return hoverLayer != null || dragLayer != null;
+        }
+    }
+
+    private static void EnsureReflectionCache()
+    {
+        if (s_registryType != null)
+            return;
+
+        s_registryType = Type.GetType(RegistryTypeName) ??
+                         Type.GetType(RegistryTypeName + ", Assembly-CSharp");
+
+        if (s_registryType == null)
+            return;
+
+        s_tryGetLayers = s_registryType.GetMethod(
+            "TryGetLayers",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            new[] { typeof(RectTransform).MakeByRefType(), typeof(RectTransform).MakeByRefType() },
+            null);
     }
 }

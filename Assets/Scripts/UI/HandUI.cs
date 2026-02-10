@@ -42,6 +42,12 @@ public class HandUI : MonoBehaviour
 
     public System.Action<Card> OnCardDiscarded;
     public IReadOnlyList<CardView> Cards => _spawned;
+    public RectTransform Container => container;
+    public CardView CardPrefab
+    {
+        get => cardPrefab;
+        set => cardPrefab = value;
+    }
 
     private void Awake()
     {
@@ -134,6 +140,13 @@ public class HandUI : MonoBehaviour
 
         view.Bind(this, card);
         view.Init(_backSprite, face, _showFace);
+
+        var hoverFx = view.GetComponent<CardHoverFX>();
+        if (hoverFx != null && PifUiBridge.HasLayering)
+        {
+            hoverFx.bringToFrontOnHover = false;
+            hoverFx.enabled = false;
+        }
 
         _spawned.Add(view);
 
