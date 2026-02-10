@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using System.Collections.Generic;
 
 namespace Pif.UI
 {
@@ -79,7 +80,6 @@ namespace Pif.UI
         private Text _eastPlayerCardsText;
 
         private RectTransform _playFieldZone;
-        private RectTransform _centerZone;
         private RectTransform _northZone;
         private RectTransform _westZone;
         private RectTransform _eastZone;
@@ -90,6 +90,7 @@ namespace Pif.UI
 
         private Vector2Int _lastScreen;
         private bool _layoutApplied;
+        private static Font s_runtimeFont;
 
         public RectTransform HoverLayer => hoverLayer;
         public RectTransform DragLayer => dragLayer;
@@ -147,6 +148,7 @@ namespace Pif.UI
                 return;
 
             BuildLayers();
+            CleanupGeneratedHierarchy();
             CacheLegacyObjects();
             ReparentLegacyObjects();
             ConfigureBootstrapFlags();
@@ -165,6 +167,27 @@ namespace Pif.UI
             _lastScreen = new Vector2Int(Screen.width, Screen.height);
             _layoutApplied = true;
             SyncWorldPileRoots();
+        }
+
+        private void CleanupGeneratedHierarchy()
+        {
+            if (zoneOverlayLayer != null)
+            {
+                HashSet<string> overlayAllowed = new HashSet<string> { "SafeArea" };
+                RemoveUnexpectedChildren(zoneOverlayLayer, overlayAllowed);
+            }
+
+            if (safeAreaRoot != null)
+            {
+                HashSet<string> safeAllowed = new HashSet<string> { "Zones" };
+                RemoveUnexpectedChildren(safeAreaRoot, safeAllowed);
+            }
+
+            if (hudLayer != null)
+            {
+                HashSet<string> hudAllowed = new HashSet<string> { "PlayersHUD", "TopBar", "ActionPanel", "SortButtons", "DebugToggle" };
+                RemoveUnexpectedChildren(hudLayer, hudAllowed);
+            }
         }
 
         private void ApplyRenderQualityHints()
@@ -285,20 +308,69 @@ namespace Pif.UI
             RectTransform zonesRoot = EnsureRectChild(safeAreaRoot, "Zones");
             zonesRoot.SetSiblingIndex(0);
             StretchFull(zonesRoot);
+            CleanupZoneHierarchy(zonesRoot);
 
             _playFieldZone = EnsureZone(zonesRoot, "PlayFieldZone", PifDropZoneType.MeldCenter, new Vector2(0.20f, 0.26f), new Vector2(0.80f, 0.74f));
-            _centerZone = EnsureZone(zonesRoot, "CenterZone", PifDropZoneType.MeldCenter, new Vector2(0.35f, 0.41f), new Vector2(0.65f, 0.65f));
             _northZone = EnsureZone(zonesRoot, "NorthZone", PifDropZoneType.MeldNorth, new Vector2(0.20f, 0.84f), new Vector2(0.80f, 1.00f));
             _westZone = EnsureZone(zonesRoot, "WestZone", PifDropZoneType.MeldWest, new Vector2(0.00f, 0.26f), new Vector2(0.14f, 0.74f));
             _eastZone = EnsureZone(zonesRoot, "EastZone", PifDropZoneType.MeldEast, new Vector2(0.86f, 0.26f), new Vector2(1.00f, 0.74f));
             _handZone = EnsureZone(zonesRoot, "HandZone", PifDropZoneType.Hand, new Vector2(0.14f, 0.00f), new Vector2(0.86f, handBandMaxY));
 
-            _drawSlotZone = EnsureZone(_centerZone, "DrawSlot", PifDropZoneType.DrawPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            _discardSlotZone = EnsureZone(_centerZone, "DiscardSlot", PifDropZoneType.DiscardPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            _viraSlotZone = EnsureZone(_centerZone, "ViraSlot", PifDropZoneType.Vira, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            _drawSlotZone = EnsureZone(_playFieldZone, "DrawSlot", PifDropZoneType.DrawPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            _discardSlotZone = EnsureZone(_playFieldZone, "DiscardSlot", PifDropZoneType.DiscardPile, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            _viraSlotZone = EnsureZone(_playFieldZone, "ViraSlot", PifDropZoneType.Vira, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
 
             ConfigureCenterSlots();
             ApplyZoneStyle();
+        }
+
+        private void CleanupZoneHierarchy(RectTransform zonesRoot)
+        {
+            if (zonesRoot == null)
+                return;
+
+            HashSet<string> rootAllowed = new HashSet<string>
+            {
+                "PlayFieldZone",
+                "NorthZone",
+                "WestZone",
+                "EastZone",
+                "HandZone"
+            };
+
+            RemoveUnexpectedChildren(zonesRoot, rootAllowed);
+
+            Transform playField = zonesRoot.Find("PlayFieldZone");
+            if (playField is RectTransform playFieldRect)
+            {
+                HashSet<string> centerAllowed = new HashSet<string>
+                {
+                    "DrawSlot",
+                    "DiscardSlot",
+                    "ViraSlot"
+                };
+                RemoveUnexpectedChildren(playFieldRect, centerAllowed);
+            }
+        }
+
+        private void RemoveUnexpectedChildren(RectTransform parent, HashSet<string> allowedNames)
+        {
+            if (parent == null)
+                return;
+
+            HashSet<string> seen = new HashSet<string>();
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                Transform child = parent.GetChild(i);
+                if (child == null)
+                    continue;
+
+                string childName = child.name;
+                bool allowed = allowedNames.Contains(childName);
+                bool duplicate = !seen.Add(childName);
+                if (!allowed || duplicate)
+                    DestroyImmediateSafe(child.gameObject);
+            }
         }
 
         private void ConfigureCardsLayout()
@@ -681,7 +753,7 @@ namespace Pif.UI
             if (text == null)
                 text = rect.gameObject.AddComponent<Text>();
             text.text = content;
-            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            text.font = GetRuntimeFont();
             text.fontSize = fontSize;
             text.alignment = align;
             text.color = color;
@@ -726,12 +798,41 @@ namespace Pif.UI
             Text label = labelRect.GetComponent<Text>();
             if (label == null)
                 label = labelRect.gameObject.AddComponent<Text>();
-            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.font = GetRuntimeFont();
             label.fontSize = 15;
             label.alignment = align;
             label.color = textColor;
             label.raycastTarget = false;
             return label;
+        }
+
+        private static Font GetRuntimeFont()
+        {
+            if (s_runtimeFont != null)
+                return s_runtimeFont;
+
+            try
+            {
+                s_runtimeFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            }
+            catch
+            {
+                s_runtimeFont = null;
+            }
+
+            if (s_runtimeFont == null)
+            {
+                try
+                {
+                    s_runtimeFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
+                }
+                catch
+                {
+                    s_runtimeFont = null;
+                }
+            }
+
+            return s_runtimeFont;
         }
 
         private void CreateTopBarButton(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string label)
@@ -766,11 +867,17 @@ namespace Pif.UI
             if (gameBootstrap != null)
                 mode = gameBootstrap.CurrentSortMode;
 
-            ApplySortPillState(_sortSuitButton, mode == GameBootstrap.SortMode.BySuit);
-            ApplySortPillState(_sortRankButton, mode == GameBootstrap.SortMode.ByRank);
+            bool suitActive = mode == GameBootstrap.SortMode.BySuit;
+            bool rankActive = mode == GameBootstrap.SortMode.ByRank;
+
+            _sortSuitButton.interactable = !suitActive;
+            _sortRankButton.interactable = !rankActive;
+
+            ApplySortPillState(_sortSuitButton, suitActive, _sortSuitButton.interactable);
+            ApplySortPillState(_sortRankButton, rankActive, _sortRankButton.interactable);
         }
 
-        private void ApplySortPillState(Button button, bool active)
+        private void ApplySortPillState(Button button, bool active, bool interactable)
         {
             if (button == null)
                 return;
@@ -782,7 +889,7 @@ namespace Pif.UI
                 if (fill != null)
                 {
                     fill.color = panelFillColor;
-                    fill.FillOpacity = active ? panelFillOpacity + 0.08f : panelFillOpacity * 0.9f;
+                    fill.FillOpacity = active ? panelFillOpacity + 0.1f : panelFillOpacity * 0.82f;
                     fill.StrokeOpacity = 0f;
                     fill.StrokeWidth = 0f;
                 }
@@ -797,7 +904,7 @@ namespace Pif.UI
                     stroke.color = active ? sortAccentColor : Color.white;
                     stroke.FillOpacity = 0f;
                     stroke.StrokeWidth = active ? panelStrokeWidth + 0.6f : panelStrokeWidth;
-                    stroke.StrokeOpacity = active ? 0.58f : 0.2f;
+                    stroke.StrokeOpacity = active ? 0.54f : 0.2f;
                 }
             }
 
@@ -806,8 +913,17 @@ namespace Pif.UI
             {
                 Text text = labelTransform.GetComponent<Text>();
                 if (text != null)
-                    text.color = active ? new Color(1f, 0.95f, 0.84f, 0.98f) : new Color(1f, 1f, 1f, 0.9f);
+                    text.color = active
+                        ? new Color(1f, 0.95f, 0.84f, interactable ? 0.96f : 0.76f)
+                        : new Color(1f, 1f, 1f, 0.9f);
             }
+
+            CanvasGroup group = button.GetComponent<CanvasGroup>();
+            if (group == null)
+                group = button.gameObject.AddComponent<CanvasGroup>();
+            group.alpha = active && !interactable ? 0.7f : 1f;
+            group.interactable = interactable;
+            group.blocksRaycasts = interactable;
         }
 
         private void RefreshPlayerHudCounters()
@@ -897,7 +1013,6 @@ namespace Pif.UI
             float fillAlpha = showZonesDebug ? Mathf.Max(zoneFillOpacity, 0.11f) : zoneFillOpacity;
 
             ApplyStyle(_playFieldZone, strokeAlpha, fillAlpha);
-            ApplyStyle(_centerZone, strokeAlpha, fillAlpha);
             ApplyStyle(_northZone, strokeAlpha, fillAlpha * 0.7f);
             ApplyStyle(_westZone, strokeAlpha, fillAlpha * 0.7f);
             ApplyStyle(_eastZone, strokeAlpha, fillAlpha * 0.7f);
@@ -990,6 +1105,18 @@ namespace Pif.UI
 
             rect.gameObject.SetActive(true);
             return rect;
+        }
+
+        private static void DestroyImmediateSafe(GameObject go)
+        {
+            if (go == null)
+                return;
+
+            go.SetActive(false);
+            if (Application.isPlaying)
+                Object.Destroy(go);
+            else
+                Object.DestroyImmediate(go);
         }
 
         private RectTransform EnsureZone(RectTransform parent, string name, PifDropZoneType zoneType, Vector2 anchorMin, Vector2 anchorMax)

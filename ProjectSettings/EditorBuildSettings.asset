@@ -14,6 +14,9 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/Game_Backup.unity
     guid: fb91d931a2bc4f5cb7fd7e93afd4175e
+  - enabled: 0
+    path: Assets/Scenes/PifTable_Backup.unity
+    guid: 24943fadb248430ab39dfff862ee8ad0
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 3590b91b4603b465dbb4216d601bff33, type: 3}
   m_UseUCBPForAssetBundles: 0
