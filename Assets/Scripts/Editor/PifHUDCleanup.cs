@@ -184,7 +184,7 @@ public class PifHUDCleanup : EditorWindow
 
         // Encontra todas as MeldLanes
         MeldLane[] lanes = meldBoard.GetComponentsInChildren<MeldLane>(true);
-        int fixed = 0;
+        int correctedCount = 0;
 
         foreach (MeldLane lane in lanes)
         {
@@ -196,7 +196,7 @@ public class PifHUDCleanup : EditorWindow
                 c.a = 0.02f; // Quase invisível quando vazio
                 bgImage.color = c;
                 bgImage.raycastTarget = false;
-                fixed++;
+                correctedCount++;
                 Debug.Log($"  ✅ {lane.gameObject.name}: background alpha = 0.02");
             }
 
@@ -221,15 +221,15 @@ public class PifHUDCleanup : EditorWindow
                     c.a = 0.01f;
                     panelImg.color = c;
                     panelImg.raycastTarget = false;
-                    fixed++;
+                    correctedCount++;
                     Debug.Log($"  ✅ {lane.gameObject.name}/Panel: tornado invisível");
                 }
             }
         }
 
-        if (fixed > 0)
+        if (correctedCount > 0)
         {
-            Debug.Log($"[PifHUDCleanup] ✅ {fixed} área(s) de meld corrigida(s).");
+            Debug.Log($"[PifHUDCleanup] ✅ {correctedCount} área(s) de meld corrigida(s).");
             EditorUtility.SetDirty(meldBoard.gameObject);
         }
         else
