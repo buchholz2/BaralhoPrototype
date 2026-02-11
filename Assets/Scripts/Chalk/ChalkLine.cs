@@ -22,8 +22,8 @@ public class ChalkLine : MonoBehaviour
     public bool closedLoop;
     public bool repeatTexturePerSegment = true;
     public LineAlignment lineAlignment = LineAlignment.View;
-    [Min(0)] public int cornerVertices = 0;
-    [Min(0)] public int capVertices = 0;
+    [Min(0)] public int cornerVertices = 8; // Aumentado para cantos mais suaves
+    [Min(0)] public int capVertices = 6; // Aumentado para pontas mais suaves
 
     [Header("Sorting")]
     public string sortingLayerName = "ChalkOverlay";

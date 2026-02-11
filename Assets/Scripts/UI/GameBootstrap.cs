@@ -985,6 +985,13 @@ public class GameBootstrap : MonoBehaviour
     {
         _sortMode = initialSortMode;
         sortByRank = _sortMode == SortMode.ByRank;
+        
+        // NÃO aplicar sorting automaticamente se mode for None
+        // A mão deve começar na ordem randômica da distribuição
+        if (_sortMode != SortMode.None)
+        {
+            ApplySortMode();
+        }
     }
 
     private SortButtonLockState GetLockStateForSortMode(SortMode mode)

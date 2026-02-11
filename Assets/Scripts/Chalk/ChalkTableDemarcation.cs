@@ -41,12 +41,12 @@ public class ChalkTableDemarcation : MonoBehaviour
     [Header("Simple White Lines")]
     public bool useSimpleWhiteLines = true;
     public Color simpleLineColor = Color.white;
-    [Range(0f, 1f)] public float simpleLineOpacity = 0.16f;
+    [Range(0f, 1f)] public float simpleLineOpacity = 0.32f; // Aumentado para linhas mais visíveis
 
     [Header("Rounded Corners")]
     public bool useRoundedCorners = true;
-    [Min(0f)] public float cornerRadius = 0.4f;
-    [Range(2, 18)] public int cornerSegments = 6;
+    [Min(0f)] public float cornerRadius = 0.5f; // Aumentado para cantos mais suaves
+    [Range(2, 18)] public int cornerSegments = 12; // Aumentado para cantos mais suaves sem serrilhado
 
     [Header("Debug")]
     public bool showZonesDebug = false;

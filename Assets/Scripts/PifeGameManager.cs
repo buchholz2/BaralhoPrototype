@@ -547,6 +547,18 @@ public class PifeGameManager : MonoBehaviour
         return players[currentPlayerIndex];
     }
 
+    public int GetCurrentPlayerIndex()
+    {
+        return currentPlayerIndex;
+    }
+
+    public int GetPlayerHandCount(int playerIndex)
+    {
+        if (playerIndex < 0 || playerIndex >= players.Count)
+            return 0;
+        return players[playerIndex].hand.Count;
+    }
+
     public List<Player> GetAllPlayers()
     {
         return new List<Player>(players);

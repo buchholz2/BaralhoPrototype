@@ -22,13 +22,16 @@ public class PifHUD : MonoBehaviour
     [SerializeField] private RectTransform discardPileRoot;
     
     [Header("Meld Board")]
-    [SerializeField] private MeldBoard meldBoard;
+    [SerializeField] private MeldBoard _meldBoard;
     
     [Header("Round Summary")]
     [SerializeField] private RoundSummaryModal roundSummaryModal;
 
     private int _currentPlayerIndex = 0;
     private readonly string[] _playerNames = { "Você", "IA 1", "IA 2", "IA 3" };
+    
+    // Propriedade pública para acesso externo
+    public MeldBoard meldBoard => _meldBoard;
 
     private void Start()
     {

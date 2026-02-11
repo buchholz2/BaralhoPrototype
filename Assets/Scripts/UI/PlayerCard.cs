@@ -75,7 +75,11 @@ public class PlayerCard : MonoBehaviour
         var bootstrap = FindObjectOfType<GameBootstrap>();
         if (bootstrap != null)
         {
-            // TODO: Implementar método de sorting no GameBootstrap
+            if (mode == GameBootstrap.SortMode.BySuit)
+                bootstrap.SortSuit();
+            else if (mode == GameBootstrap.SortMode.ByRank)
+                bootstrap.SortRank();
+                
             Debug.Log($"[PlayerCard] Sort mode changed to: {mode}");
         }
     }
